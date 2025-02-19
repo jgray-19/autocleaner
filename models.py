@@ -1,5 +1,6 @@
-import torch.nn as nn
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 COMPRESSED_LENGTH = 125  # Compressed length for the bottleneck layer (selected for 1000 turns)
 
@@ -67,99 +68,68 @@ class SimpleConvAutoencoder(nn.Module):
         x = self.encoder(x)  # shape => (B, latent_channels, compressed_length)
         x = self.decoder(x)  # shape => (B, input_channels, original_length)
         return x
+    
 
+class ChannelLayerNorm(nn.Module):
+    """
+    Applies Layer Normalization over the channel dimension for 1D data.
+    Input shape: (B, C, L)
+    """
+    def __init__(self, num_channels):
+        super().__init__()
+        self.ln = nn.LayerNorm(num_channels)
 
-class FrequencyPreservingAutoencoder(nn.Module):
-    def __init__(self, input_channels=1, base_channels=32):
-        """
-        Args:
-            input_channels (int): Number of input channels (e.g. number of BPMs, or 1 if each signal is separate).
-            base_channels (int): Base number of channels for the convolutional layers.
-        """
-        super(FrequencyPreservingAutoencoder, self).__init__()
-        
-        # Encoder
-        self.enc1 = nn.Sequential(
-            nn.Conv1d(input_channels, base_channels, kernel_size=3, padding=1),
-            nn.BatchNorm1d(base_channels),
-            nn.LeakyReLU(0.01)
-        )  # output: (base_channels, T)
-        
-        # Downsample by factor 2
-        self.pool1 = nn.Conv1d(base_channels, base_channels, kernel_size=3, stride=2, padding=1)
-        self.enc2 = nn.Sequential(
-            nn.Conv1d(base_channels, base_channels * 2, kernel_size=3, padding=1),
-            nn.BatchNorm1d(base_channels * 2),
-            nn.LeakyReLU(0.01)
-        )  # output: (base_channels*2, T/2)
-        
-        self.pool2 = nn.Conv1d(base_channels * 2, base_channels * 2, kernel_size=3, stride=2, padding=1)
-        self.enc3 = nn.Sequential(
-            # Using dilation can help capture longer-range oscillatory patterns
-            nn.Conv1d(base_channels * 2, base_channels * 4, kernel_size=3, padding=2, dilation=2),
-            nn.BatchNorm1d(base_channels * 4),
-            nn.Tanh()  # Using Tanh here to encourage a smooth, symmetric representation
-        )  # output: (base_channels*4, T/4)
-        
-        # Bottleneck: you can add additional convolutional layers if desired.
-        self.bottleneck = nn.Sequential(
-            nn.Conv1d(base_channels * 4, base_channels * 4, kernel_size=3, padding=1),
-            nn.BatchNorm1d(base_channels * 4),
-            nn.Tanh(),
-            nn.Conv1d(base_channels * 4, base_channels * 4, kernel_size=3, padding=1),
-            nn.BatchNorm1d(base_channels * 4),
-            nn.Tanh()
-        )
-        
-        # Decoder
-        self.up1 = nn.ConvTranspose1d(base_channels * 4, base_channels * 2, kernel_size=3, stride=2, padding=1, output_padding=1)
-        self.dec1 = nn.Sequential(
-            nn.Conv1d(base_channels * 4, base_channels * 2, kernel_size=3, padding=1),
-            nn.BatchNorm1d(base_channels * 2),
-            nn.LeakyReLU(0.01)
-        )
-        
-        self.up2 = nn.ConvTranspose1d(base_channels * 2, base_channels, kernel_size=3, stride=2, padding=1, output_padding=1)
-        self.dec2 = nn.Sequential(
-            nn.Conv1d(base_channels * 2, base_channels, kernel_size=3, padding=1),
-            nn.BatchNorm1d(base_channels),
-            nn.LeakyReLU(0.01)
-        )
-        
-        # Final output layer: use Tanh so that the output is in [-1, 1]
-        self.out_conv = nn.Conv1d(base_channels, input_channels, kernel_size=3, padding=1)
-        self.out_activation = nn.Tanh()
-        
     def forward(self, x):
-        # x shape: (batch, channels, T)
+        # Transpose so that channels are the last dimension, apply LayerNorm, then transpose back.
+        x = x.transpose(1, 2)
+        x = self.ln(x)
+        return x.transpose(1, 2)
+
+class SimpleSkipAutoencoder(nn.Module):
+    def __init__(self, input_channels, base_channels=32):
+        """
+        A fully convolutional autoencoder using dilated convolutions, LayerNorm, and skip connections.
+        
+        Args:
+            input_channels (int): Number of input channels.
+            base_channels (int): Number of channels for the first convolution.
+        """
+        super().__init__()
         # Encoder
-        e1 = self.enc1(x)         # e1: (B, base_channels, T)
-        p1 = self.pool1(e1)       # p1: (B, base_channels, T/2)
+        self.enc1 = nn.Conv1d(input_channels, base_channels, kernel_size=3, stride=1, padding=1)
+        self.ln1 = ChannelLayerNorm(base_channels)
         
-        e2 = self.enc2(p1)        # e2: (B, base_channels*2, T/2)
-        p2 = self.pool2(e2)       # p2: (B, base_channels*2, T/2) with downsampling -> (B, base_channels*2, T/4)
+        # Downsample with a stride-2 convolution
+        self.enc2 = nn.Conv1d(base_channels, base_channels * 2, kernel_size=3, stride=2, padding=1)
+        self.ln2 = ChannelLayerNorm(base_channels * 2)
         
-        e3 = self.enc3(p2)        # e3: (B, base_channels*4, T/4)
-        
-        # Bottleneck
-        b = self.bottleneck(e3)   # b: (B, base_channels*4, T/4)
+        # Further downsample using a dilated convolution (dilation=2) to capture a wider context without extra parameters
+        self.enc3 = nn.Conv1d(base_channels * 2, base_channels * 2, kernel_size=3, stride=2, padding=2, dilation=2)
+        self.ln3 = ChannelLayerNorm(base_channels * 2)
         
         # Decoder
-        up1 = self.up1(b)         # up1: (B, base_channels*2, T/2)
-        # Skip connection from e2: concatenate along the channel dimension
-        cat1 = torch.cat([up1, e2], dim=1)  # (B, base_channels*4, T/2)
-        d1 = self.dec1(cat1)      # (B, base_channels*2, T/2)
+        self.dec1 = nn.ConvTranspose1d(base_channels * 2, base_channels * 2, kernel_size=3,
+                                        stride=2, padding=1, output_padding=1)
+        self.ln_d1 = ChannelLayerNorm(base_channels * 2)
         
-        up2 = self.up2(d1)        # (B, base_channels, T)
-        # Skip connection from e1
-        cat2 = torch.cat([up2, e1], dim=1)  # (B, base_channels*2, T)
-        d2 = self.dec2(cat2)      # (B, base_channels, T)
+        self.dec2 = nn.ConvTranspose1d(base_channels * 2, base_channels, kernel_size=3,
+                                        stride=2, padding=1, output_padding=1)
+        self.ln_d2 = ChannelLayerNorm(base_channels)
         
-        out = self.out_conv(d2)   # (B, input_channels, T)
-        out = self.out_activation(out)  # Ensures output in [-1, 1]
-        return out
+        self.dec3 = nn.Conv1d(base_channels, input_channels, kernel_size=3, stride=1, padding=1)
 
-# Example usage:
-# model = FrequencyPreservingAutoencoder(input_channels=1, base_channels=32)
-# x = torch.randn(8, 1, 1000)  # batch of 8 samples, 1 channel, 1000 timesteps
-# output = model(x)
+    def forward(self, x):
+        # Encoder path
+        e1 = F.leaky_relu(self.ln1(self.enc1(x)), negative_slope=0.01)    # shape: (B, base_channels, L)
+        e2 = F.leaky_relu(self.ln2(self.enc2(e1)), negative_slope=0.01)     # shape: (B, base_channels*2, L/2)
+        e3 = F.leaky_relu(self.ln3(self.enc3(e2)), negative_slope=0.01)     # shape: (B, base_channels*2, L/4)
+        
+        # Decoder path with skip connections
+        d1 = F.leaky_relu(self.ln_d1(self.dec1(e3)), negative_slope=0.01)   # shape: (B, base_channels*2, L/2)
+        d1 = d1 + e2  # Skip connection from e2
+        
+        d2 = F.leaky_relu(self.ln_d2(self.dec2(d1)), negative_slope=0.01)   # shape: (B, base_channels, L)
+        d2 = d2 + e1  # Skip connection from e1
+        
+        d3 = torch.tanh(self.dec3(d2))  # Final output in [-1, 1]
+        return d3

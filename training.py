@@ -15,21 +15,18 @@ from config import (
     TURN_DIFF_WEIGHT,
     WEIGHT_DECAY,
 )
-from dataloader import BPMSDataset
-from fft_processing import calculate_fft_and_amps
-
 # Existing imports
-from losses import CombinedTimeFreqLoss  # , DedicatedMSLELoss, SafeMSLELoss
-from visualisation import plot_loss, update_live_plot
+from losses import combined_mse_correlation_loss#, MSLELoss
+from visualisation import plot_loss
 
+combined_loss_fn = combined_mse_correlation_loss
+intra_bpm_loss_fn = nn.MSELoss()
+intra_turn_loss_fn = nn.MSELoss()
 
 def loss_calculation(
     model: nn.Module,
     noisy: torch.Tensor,
     clean: torch.Tensor,
-    combined_loss_fn: Callable,
-    intra_bpm_loss_fn: Callable,
-    intra_turn_loss_fn: Callable,
 ):
     """
     Computes a hybrid loss:
@@ -63,13 +60,13 @@ def loss_calculation(
     return combined
 
 
-def train(model, train_loader, optimizer, loss_fn):
+def train(model, train_loader, optimizer):
     model.train()
     epoch_loss = 0
 
     for noisy, clean in train_loader:
         optimizer.zero_grad()
-        loss = loss_fn(model, noisy, clean)
+        loss = loss_calculation(model, noisy, clean)
         loss.backward()
         optimizer.step()
         epoch_loss += loss.item()
@@ -77,23 +74,21 @@ def train(model, train_loader, optimizer, loss_fn):
     return epoch_loss / len(train_loader)
 
 
-def validate(model, val_loader, loss_fn):
+def validate(model, val_loader):
     model.eval()
     val_loss = 0
     with torch.no_grad():
         for noisy, clean in val_loader:
-            val_loss += loss_fn(model, noisy, clean).item()
+            val_loss += loss_calculation(model, noisy, clean).item()
     return val_loss / len(val_loader)
 
 
-def train_model(model, train_loader, val_loader, dataset: BPMSDataset):
+def train_model(model, train_loader, val_loader):
     optimizer = optim.AdamW(
         model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY
     )
     train_loss_values = []
     val_loss_values = []
-
-    combined_loss_fn = CombinedTimeFreqLoss(dataset.clean_data_norm)
 
     # clean_flat = dataset.clean_data_norm.reshape(dataset.clean_data_norm.shape[0], -1)
     # diff_bpm_clean = clean_flat[:, 1:] - clean_flat[:, :-1]
@@ -103,18 +98,11 @@ def train_model(model, train_loader, val_loader, dataset: BPMSDataset):
         # return bpm_diff_loss_fn(diff_bpm_rec, diff_bpm_clean)
         
     
-    intra_bpm_loss_fn = nn.MSELoss()
-    intra_turn_loss_fn = nn.MSELoss()
-
-    def loss_fn(model, noisy, clean):
-        return loss_calculation(
-            model, noisy, clean, combined_loss_fn, intra_bpm_loss_fn, intra_turn_loss_fn
-        )
 
     try:
         for epoch in range(NUM_EPOCHS):
-            epoch_loss = train(model, train_loader, optimizer, loss_fn)
-            val_loss = validate(model, val_loader, loss_fn)
+            epoch_loss = train(model, train_loader, optimizer)
+            val_loss = validate(model, val_loader)
             train_loss_values.append(epoch_loss)
             val_loss_values.append(val_loss)
 
@@ -124,11 +112,9 @@ def train_model(model, train_loader, val_loader, dataset: BPMSDataset):
                 f"Val Loss: {val_loss_values[-1]:.4g}"
             )
 
-        # Save final loss plot
-        plot_loss(train_loss_values, val_loss_values)
-
     except KeyboardInterrupt:
         print("Training interrupted. Saving model...")
         torch.save(model.state_dict(), "interrupted_model.pth")
+    plot_loss(train_loss_values, val_loss_values)
 
     return model

@@ -1,11 +1,13 @@
 import numpy as np
+import pandas as pd
 import tfs
 import torch
 from torch.utils.data import DataLoader, Dataset
-from turn_by_turn.lhc import read_tbt
+from turn_by_turn import TbtData, TransverseData
+from turn_by_turn.lhc import read_tbt, write_tbt
 
-from config import BATCH_SIZE, BEAM, NBPMS, NTURNS, NUM_FILES, NOISE_FACTOR, SEED
-from rdt_functions import get_tbt_path, get_model_dir
+from config import BATCH_SIZE, BEAM, NBPMS, NOISE_FACTOR, NTURNS, NUM_FILES, SEED
+from rdt_functions import get_model_dir, get_tbt_path
 
 
 def load_clean_data() -> torch.Tensor:
@@ -31,17 +33,37 @@ def load_clean_data() -> torch.Tensor:
     return torch.tensor(xy_data, dtype=torch.float32)
 
 
-def convert_denoised_data(data: torch.Tensor) -> np.ndarray:
-    model_dat = tfs.read(get_model_dir(beam=BEAM) / "twiss.dat")
+def write_data(data: torch.Tensor, noise_index: int) -> np.ndarray:
+    model_dat = tfs.read(get_model_dir(beam=BEAM) / "twiss.dat", index="NAME")
     sqrt_betax = np.sqrt(model_dat["BETX"].values)  # Square root of beta x at each BPM (1D array)
+    sqrt_betay = np.sqrt(model_dat["BETY"].values)  # Square root of beta y at each BPM (1D array)
 
-    assert data.shape == (NBPMS, NTURNS), "Data shape mismatch"
+    x_bpm_names = model_dat.index.to_list()
+    y_bpm_names = model_dat.index.to_list()
 
-    x_data = data.cpu().numpy() * sqrt_betax[:, None]   # Multiply by sqrt(beta_x) to get back to original scale
+    print(data.shape)
 
-    return x_data
+    assert data.shape == (2*NBPMS, NTURNS), "Data shape mismatch"
 
+    x_data = data[:NBPMS, :] * sqrt_betax[:, None]
+    y_data = data[NBPMS:, :] * sqrt_betay[:, None]
+    
+    # Write out the denoised frequency and amplitude data
+    out_path = get_tbt_path(beam=BEAM, nturns=NTURNS, index=noise_index)
 
+    matrices = [
+        TransverseData(
+            X=pd.DataFrame(
+                index=x_bpm_names, data=x_data, dtype=float,
+            ),
+            Y=pd.DataFrame(
+                index=y_bpm_names, data=y_data, dtype=float,
+            ),
+        )
+    ]
+    out_data = TbtData(matrices=matrices, nturns=NTURNS)
+    write_tbt(out_path, out_data)  # Write out the denoised data
+    return out_path, out_data
 
 class BPMSDataset(Dataset):
     def __init__(self, num_files, noise_factor=NOISE_FACTOR, base_seed=SEED):

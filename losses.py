@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from omc3.harpy.frequency import windowing
 
-from config import NTURNS, HARPY_INPUT, FFT_WEIGHT, BATCH_SIZE, NUM_CHANNELS
+from config import NTURNS, HARPY_INPUT, FFT_WEIGHT, ALPHA
 
-default_window = windowing(NTURNS, window="hann")
-default_window = torch.tensor(default_window, dtype=torch.float64)
+WINDOW = windowing(NTURNS, window="hann")
+WINDOW = torch.tensor(WINDOW, dtype=torch.float64)
 
 class HybridMSERelativeLoss(nn.Module):
     def __init__(self, alpha=0.5, eps=1e-5):
@@ -66,59 +67,39 @@ class SafeMSLELoss(nn.Module):
         loss = torch.mean((log_pred - log_target) ** 2)
         return loss
 
+@torch.jit.script
 def fast_fft_log_mse(
     reconstructed: torch.Tensor,
     clean: torch.Tensor,
-    fft_criterion: torch.nn.Module,
-    window: torch.Tensor = default_window,
+    window: torch.Tensor,
     n_fft: int = 2 ** HARPY_INPUT["output_bits"],
     eps: float = 1e-8
 ) -> torch.Tensor:
-    """
-    Compute an MSE loss in log(FFT) space over a batch of data.
-    
-    Args:
-        reconstructed (torch.Tensor): shape (batch, BPMs, T)
-        clean (torch.Tensor): shape (batch, BPMs, T)
-        fft_criterion (nn.Module): e.g. nn.MSELoss()
-        window (torch.Tensor, optional): 1D window of shape (T,) to apply before FFT.
-        n_fft (int, optional): Zero-padding length. If None, no extra padding is used.
-        eps (float): Small offset to avoid log(0).
-    
-    Returns:
-        torch.Tensor: Scalar loss (averaged over batch and BPMs).
-    """
-    B, C, T = reconstructed.shape
-    # 1) Flatten (B × N, T) so we can apply a single batched FFT
-    rec_flat = reconstructed.reshape(B * C, T)
-    clean_flat = clean.reshape(B * C, T)
+    B, N, T = reconstructed.shape
 
-    # 2) Multiply by window
-    rec_flat = rec_flat * window
-    clean_flat = clean_flat * window
+    # Apply window function
+    rec_flat = reconstructed.reshape(B * N, T) * window
+    clean_flat = clean.reshape(B * N, T) * window
 
-    # 3) Perform batched RFFT
+    # Perform FFT (TorchScript does not support complex tensors)
     rec_fft = torch.fft.rfft(rec_flat, n=n_fft, dim=-1)
     clean_fft = torch.fft.rfft(clean_flat, n=n_fft, dim=-1)
 
-    # 4) Convert to log10 of magnitude
-    rec_log = torch.log10(torch.clamp(rec_fft.abs(), min=eps))
-    clean_log = torch.log10(torch.clamp(clean_fft.abs(), min=eps))
-    
-    # 5) Compute MSE loss
-    fft_loss = fft_criterion(rec_log, clean_log)
-    return fft_loss
+    # Extract the real magnitude of FFT (TorchScript does NOT support complex tensors)
+    rec_mag = torch.view_as_real(rec_fft).pow(2).sum(-1).sqrt()
+    clean_mag = torch.view_as_real(clean_fft).pow(2).sum(-1).sqrt()
 
+    # Compute log10(FFT magnitude)
+    rec_log = torch.log10(torch.clamp(rec_mag, min=eps))
+    clean_log = torch.log10(torch.clamp(clean_mag, min=eps))
+
+    # Compute MSE loss
+    return torch.nn.functional.mse_loss(rec_log, clean_log)
 
 class CombinedTimeFreqLoss(torch.nn.Module):
-    def __init__(self, target: torch.Tensor):
+    def __init__(self):
         super().__init__()
-        self.time_loss_func = nn.MSELoss()
-        self.fft_criterion = nn.MSELoss()
-        # self.target = target  # This will be the clean data without any batch dimension, shape (BPMs, T)
-        # target = target * default_window
-        # fft_target = torch.fft.rfft(target, n=2 ** HARPY_INPUT["output_bits"], dim=-1)
-        # self.clean_log = torch.log10(torch.clamp(fft_target.abs(), min=1e-8))
+        self.time_loss_func = correlation_loss
 
     def forward(self, pred, target):
         # Time-domain portion
@@ -128,14 +109,41 @@ class CombinedTimeFreqLoss(torch.nn.Module):
         if FFT_WEIGHT == 0:
             return time_loss
 
-        # Repeat the clean_log based on the batch size of pred
-        # batch_size = pred.shape[0]
-        # clean_log_repeated = self.clean_log.repeat(batch_size, 1)
-
-        freq_loss = fast_fft_log_mse(
-            pred, target, fft_criterion=self.fft_criterion,
-        )
+        freq_loss = fast_fft_log_mse(pred, target, WINDOW)
 
         # Weighted combination
         total_loss = time_loss + FFT_WEIGHT * freq_loss
         return total_loss
+    
+def correlation_loss(pred, target, eps=1e-8):
+    # Flatten (batch, channels, length) => (batch*channels, length)
+    B, C, T = pred.shape
+    pred_flat = pred.view(B*C, T)
+    tgt_flat  = target.view(B*C, T)
+
+    # Zero-mean
+    pred_centered = pred_flat - pred_flat.mean(dim=-1, keepdim=True)
+    tgt_centered  = tgt_flat  - tgt_flat.mean(dim=-1, keepdim=True)
+
+    # Cosine similarity or correlation
+    numerator = (pred_centered * tgt_centered).sum(dim=-1)
+    denom = torch.sqrt((pred_centered**2).sum(dim=-1) * (tgt_centered**2).sum(dim=-1)) + eps
+    corr = numerator / denom  # correlation in [-1, 1]
+    
+    # Convert correlation to a loss => 1 - corr
+    loss = 1 - corr.mean()
+    return loss
+
+def combined_mse_correlation_loss(pred, target, alpha=ALPHA):
+    loss_mse = torch.mean((pred - target)**2)
+    loss_corr = correlation_loss(pred, target)
+    return alpha * loss_mse + (1 - alpha) * loss_corr
+
+# class MSLELoss(nn.Module):
+#     def forward(self, pred, target):
+#         pred = torch.log1p(pred + 1)
+#         target = torch.log1p(target + 1)
+#         # Normalise all bpms for that turn using max absolute value
+#         pred = pred / (torch.max(torch.abs(pred), dim=0, keepdim=True)[0] + 1e-8)
+#         target = target / (torch.max(torch.abs(target), dim=0, keepdim=True)[0] + 1e-8)
+#         return torch.mean((pred - target) ** 2)
