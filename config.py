@@ -21,36 +21,32 @@ NUM_CHANNELS = NBPMS * NUM_PLANES  # Now processing both X and Y planes
 
 # Optimisation Settings
 NUM_EPOCHS = 2000
-BOTTLENECK_SIZE = 24
+BOTTLENECK_SIZE = 64
+BASE_CHANNELS = 32
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-4
 
 BPM_DIFF_WEIGHT = 1e-1
 TURN_DIFF_WEIGHT = 1e-1
 
+ALPHA = 0.9
+
+DENOISED_INDEX = -2
+SAMPLE_INDEX = int(((1-TRAIN_RATIO) * NUM_FILES) // 2)
 
 NOISE_FACTOR=1e-9
-# -----------------------------------------
-#  New Loss Weights for Combined Time + Frequency
-# -----------------------------------------
-# alpha = fraction of emphasis on time-domain vs. frequency-domain
-# e.g., alpha=0.7 => 70% time, 30% freq
-# ALPHA_TIME_FREQ = 1
 
 # Additional weight for the frequency component
-FFT_WEIGHT = 1e-4 # Time loss initially on order of 0.2, Freq loss on order of 11.7 -> so 11.7*1e-4 = 1.17e-3 -> around 100 times smaller
-
-# Using a hybrid time loss that blends MSE + relative error
-# e.g., 0.5 => half absolute MSE, half relative error
-# TIME_LOSS_ALPHA = 0.5  
+FFT_WEIGHT = 0#1e-4 # Time loss initially on order of 0.2, Freq loss on order of 11.7 -> so 11.7*1e-4 = 1.17e-3 -> around 100 times smaller
 
 STRING_PREFIX = (
     f"beam{BEAM}_"
-    # + "alpha{ALPHA_TIME_FREQ:.1f}_"
-    # + f"tbt{TIME_LOSS_ALPHA:.1f}_"
     + f"fft{FFT_WEIGHT:.1e}_"
     + f"{BPM_DIFF_WEIGHT:.1e}diff_"
+    + f"{TURN_DIFF_WEIGHT:.1e}turn_"
+    + f"alpha{ALPHA}_"
     + f"btnk{BOTTLENECK_SIZE}_"
+    + f"ch{BASE_CHANNELS}_"
     + f"lr{LEARNING_RATE}_"
     + f"wd{WEIGHT_DECAY}_"
     + f"files{NUM_FILES}_"
