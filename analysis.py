@@ -9,17 +9,25 @@ from rdt_functions import (
 )
 
 cleaned_path = get_tbt_path(beam=BEAM, nturns=NTURNS, index=-2)
+print("Read the cleaned data")
 run_harpy(BEAM, cleaned_path, clean=False)
+print("Done running Harpy on cleaned data")
 
 hcleaned = get_tbt_path(beam=BEAM, nturns=NTURNS, index=SAMPLE_INDEX)
+print("Read the Harpy cleaned data")
 run_harpy(BEAM, hcleaned, clean=True)
+print("Done running Harpy on Harpy cleaned data")
 
 nonoise_path = get_tbt_path(beam=BEAM, nturns=NTURNS, index=-1)
+print("Read the no noise data")
 run_harpy(BEAM, nonoise_path, clean=False)
+print("Done running Harpy on no noise data")
 
+print("Running optics analysis on the data")
 cleaned_dfs = get_rdts_from_optics_analysis(beam=BEAM, tbt_path=cleaned_path)
 hcleaned_dfs = get_rdts_from_optics_analysis(beam=BEAM, tbt_path=hcleaned)
 nonoise_rdts = get_rdts_from_optics_analysis(beam=BEAM, tbt_path=nonoise_path)
+print("Done running optics analysis")
 
 for rdt in NORMAL_SEXTUPOLE_RDTS:
     plt.figure()

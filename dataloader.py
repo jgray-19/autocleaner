@@ -81,11 +81,10 @@ class BPMSDataset(Dataset):
         raw_data = load_clean_data()  # shape: (NTURNS, 2*NBPMS)
         self.clean_data = raw_data.T   # Now shape: (2*NBPMS, NTURNS)
 
-        # Compute global min and max for normalization
-        self.data_min = torch.min(self.clean_data)
-        self.data_max = torch.max(self.clean_data)
-
-        self.clean_data_norm = self._minmax_normalize(self.clean_data)
+        # Compute global mean and std for normalization
+        self.data_mean = torch.mean(self.clean_data)
+        self.data_std = torch.std(self.clean_data)
+        self.clean_data_norm = self._unit_variance_normalize(self.clean_data)
 
         # Precompute a unique seed for each sample for reproducible noise
         rng = np.random.default_rng(base_seed)
@@ -110,15 +109,15 @@ class BPMSDataset(Dataset):
         noisy_data = self.clean_data + noise
 
         # Normalize both clean and noisy data to [-1, 1] using the global stats
-        noisy_data_norm = self._minmax_normalize(noisy_data)
+        noisy_data_norm = self._unit_variance_normalize(noisy_data)
         # clean_data_norm = self._minmax_normalize(self.clean_data)
 
         return noisy_data_norm, self.clean_data_norm
 
-    def _minmax_normalize(self, x: torch.Tensor, eps=1e-8) -> torch.Tensor:
+    def _unit_variance_normalize(self, x: torch.Tensor, eps=1e-8) -> torch.Tensor:
         """Normalize x to [-1, 1] using the precomputed global min and max."""
-        return 2.0 * (x - self.data_min) / (self.data_max - self.data_min + eps) - 1.0
-
+        return (x - self.data_mean) / (self.data_std + eps)
+    
     def denormalise(self, normalized_output: torch.Tensor, eps=1e-8) -> torch.Tensor:
         """
         Converts a normalized tensor (in range [-1, 1]) back to its original scale.
@@ -130,8 +129,7 @@ class BPMSDataset(Dataset):
         Returns:
             torch.Tensor: Denormalized output in the original data scale.
         """
-        return self.data_min + ((normalized_output + 1) / 2) * (self.data_max - self.data_min + eps)
-
+        return self.data_mean + normalized_output * (self.data_std + eps)
 
 def load_data():
     train_size = int(0.8 * NUM_FILES)

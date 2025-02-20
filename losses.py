@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from omc3.harpy.frequency import windowing
 
 from config import NTURNS, HARPY_INPUT, FFT_WEIGHT, ALPHA

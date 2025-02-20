@@ -1,10 +1,6 @@
 # training.py
-from collections.abc import Callable
-
-import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 
 # Import new config weight
@@ -15,13 +11,15 @@ from config import (
     TURN_DIFF_WEIGHT,
     WEIGHT_DECAY,
 )
+
 # Existing imports
-from losses import combined_mse_correlation_loss#, MSLELoss
+from losses import combined_mse_correlation_loss  # , MSLELoss
 from visualisation import plot_loss
 
 combined_loss_fn = combined_mse_correlation_loss
 intra_bpm_loss_fn = nn.MSELoss()
 intra_turn_loss_fn = nn.MSELoss()
+
 
 def loss_calculation(
     model: nn.Module,
@@ -90,15 +88,6 @@ def train_model(model, train_loader, val_loader):
     train_loss_values = []
     val_loss_values = []
 
-    # clean_flat = dataset.clean_data_norm.reshape(dataset.clean_data_norm.shape[0], -1)
-    # diff_bpm_clean = clean_flat[:, 1:] - clean_flat[:, :-1]
-    # bpm_diff_loss_fn = nn.MSELoss()
-    # def intra_bpm_loss_fn(diff_bpm_rec):
-        # diff_bpm_clean = 
-        # return bpm_diff_loss_fn(diff_bpm_rec, diff_bpm_clean)
-        
-    
-
     try:
         for epoch in range(NUM_EPOCHS):
             epoch_loss = train(model, train_loader, optimizer)
@@ -108,8 +97,8 @@ def train_model(model, train_loader, val_loader):
 
             print(
                 f"Epoch [{epoch + 1}/{NUM_EPOCHS}] - "
-                f"Train Loss: {train_loss_values[-1]:.4g}, "
-                f"Val Loss: {val_loss_values[-1]:.4g}"
+                f"Train Loss: {epoch_loss:.4e}, "
+                f"Val Loss: {val_loss:.4e}"
             )
 
     except KeyboardInterrupt:
