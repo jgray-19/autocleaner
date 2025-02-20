@@ -1,23 +1,28 @@
 import os
 
 import numpy as np
+import pytorch_lightning as pl
 import torch
 
 # Import configurations and utilities
 from config import (
     BOTTLENECK_SIZE,
+    DENOISED_INDEX,
     LOAD_MODEL,
     MODEL_SAVE_PATH,
     NUM_CHANNELS,
-    print_config,
-    DENOISED_INDEX,
     SAMPLE_INDEX,
+    print_config,
+    NUM_EPOCHS,
+    LEARNING_RATE,
+    WEIGHT_DECAY,
 )
-from dataloader import load_data, write_data
+from dataloader import load_data, write_data, build_sample_dict
+
 # from models import SimpleSkipAutoencoder
-from models import ImprovedConvAutoencoder
-from training import train_model
-from visualisation import plot_denoised_data
+from models import ImprovedConvAutoencoder, init_weights
+from pl_module import LitAutoencoder
+from visualisation import plot_data_distribution, plot_denoised_data
 
 assert __name__ == "__main__", "This script is not meant to be imported."
 print_config()
@@ -30,8 +35,14 @@ np.random.seed(42)
 print("Loading data...")
 train_loader, val_loader, dataset = load_data()
 
+# Visualise data distribution from one batch
+batch = next(iter(train_loader))
+plot_data_distribution(batch["noisy"], "Noisy Data Distribution")
+plot_data_distribution(batch["clean"], "Clean Data Distribution")
+
 # Initialize or Load Model
 model = ImprovedConvAutoencoder(input_channels=NUM_CHANNELS, bottleneck_size=BOTTLENECK_SIZE)
+model.apply(init_weights)
 
 if LOAD_MODEL and os.path.exists(MODEL_SAVE_PATH):
     model.load_state_dict(torch.load(MODEL_SAVE_PATH))
@@ -41,39 +52,49 @@ else:
     num_cpu = min(os.cpu_count(), 32)
     torch.set_num_threads(num_cpu)
     print(f"Using {num_cpu} CPUs for training.")
-    model = train_model(model, train_loader, val_loader)
+    lit_model = LitAutoencoder(model, learning_rate=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+    trainer = pl.Trainer(
+        max_epochs=NUM_EPOCHS,
+        log_every_n_steps=5,
+    )
+    trainer.fit(lit_model, train_loader, val_loader)
     torch.save(model.state_dict(), MODEL_SAVE_PATH)
     print("Model saved.")
 
 # Denoise validation data
 print("Denoising validation data...")
 
-denoised_batches = []
-noisy_batches = []
-clean_batches = []
-for noisy, clean in val_loader:
+# denoised_batches = []
+# collected_batches = []  # Collect raw batches from val_loader
+# denoised_samples = []
+# noisy_samples = []
+# clean_samples = []
+sample_list = []
+for batch in val_loader:
+    # collected_batches.append(batch)
+    noisy_batch = batch["noisy"]
+    # Process the batch through the model
     with torch.no_grad():
-        denoised_batch = model(noisy)
-    denoised_batches.append(denoised_batch.cpu())
-    noisy_batches.append(noisy.cpu())
-    clean_batches.append(clean.cpu())
+        denoised_batch = model(noisy_batch)
+    # Add the model output to the batch dictionary.
+    # batch["denoised"] = denoised_batch.cpu()
+    for i in range(denoised_batch.size(0)):
+        sample = {
+            "noisy": noisy_batch[i],
+            "clean": batch["clean"][i],
+            "denoised": denoised_batch[i],
+        }
+        sample_list.append(sample)
 
-denoised_val_data = torch.cat(denoised_batches, dim=0)
-noisy_val_data = torch.cat(noisy_batches, dim=0)
-clean_val_data = torch.cat(clean_batches, dim=0)
-print("Denoising complete.")
+# Reassemble one file (both planes) from the collected batches.
+# (Here we assume that among the batches we have at least one X and one Y sample.)
+sample_dict = build_sample_dict(sample_list, dataset)
+selected_noisy_sample = torch.cat([sample_dict["x"], sample_dict["y"]], dim=0)
+selected_clean_sample = torch.cat([sample_dict["x_clean"], sample_dict["y_clean"]], dim=0)
+select_denoised_sample = torch.cat([sample_dict["x_denoised"], sample_dict["y_denoised"]], dim=0)
 
-# --- Denormalize the outputs for analysis ---
-denoised_val_data_denorm = dataset.denormalise(denoised_val_data)
-noisy_val_data_denorm = dataset.denormalise(noisy_val_data)
-clean_val_data_denorm = dataset.denormalise(clean_val_data)
-
-# For FFT and visualization, select a sample from the denormalized denoised data.
-select_denoised_sample = denoised_val_data_denorm[SAMPLE_INDEX]  # Shape: (2*NBPMS, NTURNS)
-selected_noisy_sample = noisy_val_data_denorm[SAMPLE_INDEX]  # For comparison if needed
-selected_clean_sample = clean_val_data_denorm[SAMPLE_INDEX]  # For comparison if needed
-
-if torch.max(torch.abs(selected_clean_sample - dataset.clean_data) < 1e-6):
+# Check if the selected clean sample matches the original clean data
+if torch.max(torch.abs(selected_clean_sample - dataset.raw_data) < 1e-8):
     print("Selected clean sample matches the original clean data.")
 else:
     print("Selected clean sample does not match the original clean data.")

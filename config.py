@@ -6,21 +6,21 @@ from generic_parser.tools import DotDict
 # General Settings
 BEAM = 1
 NUM_FILES = 100
-LOAD_MODEL = False
+LOAD_MODEL = True
 
 # Data Settings
 NBPMS = 563
 NTURNS = 1000
-BATCH_SIZE = 3
+BATCH_SIZE = 10
 TRAIN_RATIO = 0.9
 MODEL_SAVE_PATH = "conv_autoencoder.pth"
 MODEL_DIR = get_model_dir(beam=BEAM)
 
 NUM_PLANES = 2
-NUM_CHANNELS = NBPMS * NUM_PLANES  # Now processing both X and Y planes
+NUM_CHANNELS = NBPMS
 
 # Optimisation Settings
-NUM_EPOCHS = 2000
+NUM_EPOCHS = 10
 BOTTLENECK_SIZE = 64
 BASE_CHANNELS = 32
 LEARNING_RATE = 1e-4

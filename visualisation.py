@@ -148,3 +148,13 @@ def plot_denoised_data(
     plt.savefig(PLOT_DIR / (STRING_PREFIX + tbt_id))
     print(f"TBT data plot saved as {tbt_id}.")
     plt.show()
+
+
+def plot_data_distribution(data, title="Data Distribution"):
+    plt.figure(figsize=(8, 5))
+    plt.hist(data.flatten().detach().cpu().numpy(), bins=50, density=True, alpha=0.75)
+    plt.title(title)
+    plt.xlabel("Value")
+    plt.ylabel("Density")
+    plt.grid(True)
+    plt.show()

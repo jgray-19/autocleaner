@@ -134,7 +134,12 @@ def correlation_loss(pred, target, eps=1e-8):
     return loss
 
 def combined_mse_correlation_loss(pred, target, alpha=ALPHA):
-    loss_mse = torch.mean((pred - target)**2)
+    """
+    Computes a combined loss for single-plane samples.
+    Assumes pred and target have shape (batch, NBPMS, NTURNS).
+    The loss is a weighted sum of mean squared error and a correlation loss.
+    """
+    loss_mse = torch.mean((pred - target) ** 2)
     loss_corr = correlation_loss(pred, target)
     return alpha * loss_mse + (1 - alpha) * loss_corr
 
