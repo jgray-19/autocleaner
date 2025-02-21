@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 from fft_processing import calculate_fft_and_amps
-from rdt_constants import PLOT_DIR
-from config import STRING_PREFIX, NBPMS
+from config import STRING_PREFIX, NBPMS, PLOT_DIR
 
 if not PLOT_DIR.exists():
     PLOT_DIR.mkdir(parents=True)
@@ -147,7 +146,7 @@ def plot_denoised_data(
     plt.tight_layout()
     plt.savefig(PLOT_DIR / (STRING_PREFIX + tbt_id))
     print(f"TBT data plot saved as {tbt_id}.")
-    plt.show()
+    # plt.show()
 
 
 def plot_data_distribution(data, title="Data Distribution"):

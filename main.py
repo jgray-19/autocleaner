@@ -20,7 +20,7 @@ from config import (
 from dataloader import build_sample_dict, load_data, write_data
 
 # from models import SimpleSkipAutoencoder
-from models import ConvFC_Autoencoder, init_weights
+from models import ConvFC_Autoencoder
 from pl_module import LitAutoencoder
 from visualisation import plot_data_distribution, plot_denoised_data
 
@@ -42,7 +42,7 @@ plot_data_distribution(batch["clean"], "Clean Data Distribution")
 
 # Initialize or Load Model
 model = ConvFC_Autoencoder(
-    input_channels=NUM_CHANNELS, bottleneck_size=BOTTLENECK_SIZE
+    input_channels=NUM_CHANNELS, bottleneck_dim=BOTTLENECK_SIZE
 )
 
 if LOAD_MODEL and os.path.exists(MODEL_SAVE_PATH):

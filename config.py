@@ -1,7 +1,23 @@
-# config.py
-
-from rdt_functions import get_model_dir
+from pathlib import Path
 from generic_parser.tools import DotDict
+
+CURRENT_DIR = Path(__file__).resolve().parent
+DATA_DIR = CURRENT_DIR / "data"
+PLOT_DIR = CURRENT_DIR / "plots"
+
+def get_model_dir(beam: int) -> Path:
+    """Return the model directory for the given test parameters."""
+    return CURRENT_DIR / f"model_b{beam}"
+
+def get_file_suffix(beam: int, nturns: int) -> str:
+    """Return the file suffix for the test files based on beam and order."""
+    assert beam in [1, 2], "Beam must be 1 or 2"
+    return f"b{beam}_{nturns}t"
+
+def get_tbt_path(beam: int, nturns: int, index: int) -> Path:
+    """Return the name of the TBT file for the given test parameters."""
+    suffix = get_file_suffix(beam, nturns) + (f"_{index}" if index != -1 else "_zero_noise")
+    return DATA_DIR / f"tbt_{suffix}.sdds"
 
 # General Settings
 BEAM = 1

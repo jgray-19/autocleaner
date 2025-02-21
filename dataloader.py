@@ -16,8 +16,9 @@ from config import (
     NUM_PLANES,
     SEED,
     TRAIN_RATIO,
+    get_model_dir,
+    get_tbt_path,
 )
-from rdt_functions import get_model_dir, get_tbt_path
 from sklearn.preprocessing import QuantileTransformer
 
 

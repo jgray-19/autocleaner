@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 COMPRESSED_LENGTH = 125  # Compressed length for the bottleneck layer (selected for 1000 turns)
 
