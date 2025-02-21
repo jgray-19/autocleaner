@@ -4,6 +4,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 import pytorch_lightning as pl
 import torch
+from pytorch_lightning.loggers import TensorBoardLogger
 
 # Import configurations and utilities
 from config import (
@@ -14,6 +15,7 @@ from config import (
     MODEL_SAVE_PATH,
     NUM_CHANNELS,
     NUM_EPOCHS,
+    NTURNS,
     WEIGHT_DECAY,
     print_config,
 )
@@ -42,7 +44,9 @@ plot_data_distribution(batch["clean"], "Clean Data Distribution")
 
 # Initialize or Load Model
 model = ConvFC_Autoencoder(
-    input_channels=NUM_CHANNELS, bottleneck_dim=BOTTLENECK_SIZE
+    input_channels=NUM_CHANNELS, 
+    input_length=NTURNS,
+    bottleneck_dim=BOTTLENECK_SIZE
 )
 
 if LOAD_MODEL and os.path.exists(MODEL_SAVE_PATH):
@@ -56,9 +60,13 @@ else:
     lit_model = LitAutoencoder(
         model, learning_rate=LEARNING_RATE, weight_decay=WEIGHT_DECAY
     )
+    log_dir="/home/jovyan/tensor-logs/"
+    logger = TensorBoardLogger(log_dir, name="tensorboard_logs")
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS,
         log_every_n_steps=5,
+        default_root_dir=log_dir,  # Set the logging path
+        logger=logger,
     )
     trainer.fit(lit_model, train_loader, val_loader)
     torch.save(model.state_dict(), MODEL_SAVE_PATH)

@@ -21,7 +21,7 @@ def get_tbt_path(beam: int, nturns: int, index: int) -> Path:
 
 # General Settings
 BEAM = 1
-NUM_FILES = 200
+NUM_FILES = 100
 LOAD_MODEL = False
 
 # Data Settings
@@ -36,7 +36,7 @@ NUM_PLANES = 2
 NUM_CHANNELS = NBPMS
 
 # Optimisation Settings
-NUM_EPOCHS = 200
+NUM_EPOCHS = 10
 BOTTLENECK_SIZE = 64
 BASE_CHANNELS = 32
 LEARNING_RATE = 1e-4
