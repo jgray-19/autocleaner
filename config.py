@@ -5,14 +5,14 @@ from generic_parser.tools import DotDict
 
 # General Settings
 BEAM = 1
-NUM_FILES = 100
-LOAD_MODEL = True
+NUM_FILES = 200
+LOAD_MODEL = False
 
 # Data Settings
 NBPMS = 563
 NTURNS = 1000
-BATCH_SIZE = 10
-TRAIN_RATIO = 0.9
+BATCH_SIZE = 20
+TRAIN_RATIO = 0.8
 MODEL_SAVE_PATH = "conv_autoencoder.pth"
 MODEL_DIR = get_model_dir(beam=BEAM)
 
@@ -20,7 +20,7 @@ NUM_PLANES = 2
 NUM_CHANNELS = NBPMS
 
 # Optimisation Settings
-NUM_EPOCHS = 10
+NUM_EPOCHS = 200
 BOTTLENECK_SIZE = 64
 BASE_CHANNELS = 32
 LEARNING_RATE = 1e-4
@@ -32,9 +32,8 @@ TURN_DIFF_WEIGHT = 1e-1
 ALPHA = 0.5
 
 DENOISED_INDEX = -2
-SAMPLE_INDEX = int(((1-TRAIN_RATIO) * NUM_FILES) // 2)
 
-NOISE_FACTOR=1e-9
+NOISE_FACTOR=1e-8
 
 # Additional weight for the frequency component
 FFT_WEIGHT = 0#1e-4 # Time loss initially on order of 0.2, Freq loss on order of 11.7 -> so 11.7*1e-4 = 1.17e-3 -> around 100 times smaller
