@@ -95,39 +95,48 @@ class BPMSDataset(Dataset):
         self.clean_data_norm_x = torch.tensor(self.qt_x.fit_transform(self.clean_data_x.T).T, dtype=torch.float32)
         self.clean_data_norm_y = torch.tensor(self.qt_y.fit_transform(self.clean_data_y.T).T, dtype=torch.float32)
 
-        # Precompute seeds and noise arrays.
+        # 2) Precompute all possible noisy + transformed data
+        self.noisy_data_norm_x = []
+        self.noisy_data_norm_y = []
+        
         rng = np.random.default_rng(base_seed)
-        self.seeds = rng.integers(low=0, high=1_000_000, size=self.num_files)
-        self.noise_arrays = []
-        for i in range(self.num_files):
-            rng_i = np.random.default_rng(self.seeds[i])
+        for i in range(num_files * 2):
             if i % 2 == 0:
-                noise_array = rng_i.normal(loc=0.0, scale=self.noise_factor, size=self.clean_data_x.shape)
+                # X plane
+                noise_array = rng.normal(
+                    loc=0.0, scale=noise_factor, size=self.clean_data_x.shape
+                )
+                noisy = self.clean_data_x + noise_array
+                noisy_norm = self.qt_x.transform(noisy.T).T  # offline transform
+                self.noisy_data_norm_x.append(torch.tensor(noisy_norm, dtype=torch.float32))
             else:
-                noise_array = rng_i.normal(loc=0.0, scale=self.noise_factor, size=self.clean_data_y.shape)
-            self.noise_arrays.append(torch.tensor(noise_array, dtype=torch.float32))
+                # Y plane
+                noise_array = rng.normal(
+                    loc=0.0, scale=noise_factor, size=self.clean_data_y.shape
+                )
+                noisy = self.clean_data_y + noise_array
+                noisy_norm = self.qt_y.transform(noisy.T).T
+                self.noisy_data_norm_y.append(torch.tensor(noisy_norm, dtype=torch.float32))
 
     def __len__(self):
         return self.num_files
 
     def __getitem__(self, idx):
-        # Determine plane.
+        # Index into the precomputed data
         if idx % 2 == 0:
             plane = "X"
-            clean = self.clean_data_x
+            noisy_norm = self.noisy_data_norm_x[idx // 2]  # or however you map idx
             clean_norm = self.clean_data_norm_x
-            qt = self.qt_x
         else:
             plane = "Y"
-            clean = self.clean_data_y
+            noisy_norm = self.noisy_data_norm_y[idx // 2]
             clean_norm = self.clean_data_norm_y
-            qt = self.qt_y
 
-        noise = self.noise_arrays[idx]
-        noisy = clean + noise  # Add noise in original domain.
-        # Apply Quantile Transform
-        noisy_norm = torch.tensor(qt.transform(noisy.T).T, dtype=torch.float32)
-        return {"noisy": noisy_norm, "clean": clean_norm, "plane": plane}
+        return {
+            "noisy": noisy_norm, 
+            "clean": clean_norm,
+            "plane": plane
+        }
 
     def denormalise(self, normalized_output: torch.Tensor, plane: str) -> torch.Tensor:
         """
@@ -153,8 +162,10 @@ def load_data() -> Union[DataLoader, DataLoader, BPMSDataset]:
         train_dataset,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=4,
+        num_workers=2,                 # Lower worker count can help
         pin_memory=True,
+        persistent_workers=True,       # Reuse dataloader workers
+        prefetch_factor=2,            # Adjust to taste
     )
     val_loader = DataLoader(
         val_dataset,
