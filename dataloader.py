@@ -154,14 +154,14 @@ def load_data() -> Union[DataLoader, DataLoader, BPMSDataset]:
         batch_size=BATCH_SIZE,
         shuffle=True,
         num_workers=4,
-        pin_memory=False,
+        pin_memory=True,
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=BATCH_SIZE,
         shuffle=False,
         num_workers=4,
-        pin_memory=False,
+        pin_memory=True,
     )
     return train_loader, val_loader, dataset
 
