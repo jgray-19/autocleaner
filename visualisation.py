@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 from fft_processing import calculate_fft_and_amps
-from config import STRING_PREFIX, NBPMS, PLOT_DIR
+from config import CONFIG_NAME, NBPMS, PLOT_DIR, NTURNS
 
 if not PLOT_DIR.exists():
     PLOT_DIR.mkdir(parents=True)
@@ -24,7 +24,7 @@ def plot_loss(train_loss_values, val_loss_values, filename="training_loss.png"):
     plt.title("Training vs Validation Loss")
     plt.legend()
     plt.grid(True, linestyle="--", alpha=0.6)
-    plt.savefig(PLOT_DIR / (STRING_PREFIX + filename))
+    plt.savefig(PLOT_DIR / (CONFIG_NAME + filename))
     print(f"Loss plot saved as {filename}.")
 
 
@@ -76,12 +76,16 @@ def plot_denoised_data(
         bpm_index (int): BPM index (0 to NBPMS-1) for the X plane. The corresponding Y data is at index bpm_index + NBPMS.
     """
     # Separate channels for X and Y
-    denoised_x = denoised[bpm_index, :]
-    denoised_y = denoised[bpm_index + NBPMS, :]
-    noisy_x = noisy[bpm_index, :]
-    noisy_y = noisy[bpm_index + NBPMS, :]
-    clean_x = clean[bpm_index, :]
-    clean_y = clean[bpm_index + NBPMS, :]
+    assert denoised.shape == (2, NBPMS, NTURNS)
+    assert noisy.shape == (2, NBPMS, NTURNS)
+    assert clean.shape == (2, NBPMS, NTURNS)
+
+    denoised_x = denoised[0, bpm_index, :]
+    denoised_y = denoised[1, bpm_index, :]
+    noisy_x = noisy[0, bpm_index, :]
+    noisy_y = noisy[1, bpm_index, :]
+    clean_x = clean[0, bpm_index, :]
+    clean_y = clean[1, bpm_index, :]
 
     # Compute FFT (using your existing helper, for example)
     denoised_freqs_x, denoised_amps_x = get_fft_at_device(denoised_x.unsqueeze(0), 0)
@@ -120,7 +124,7 @@ def plot_denoised_data(
     axs[1].grid(True, linestyle="--", alpha=0.6)
 
     plt.tight_layout()
-    plt.savefig(PLOT_DIR / (STRING_PREFIX + spectrum_id))
+    plt.savefig(PLOT_DIR / (CONFIG_NAME + spectrum_id))
     print(f"Denoised spectrum plot saved as {spectrum_id}.")
 
     # Also plot the tbt data for the selected device
@@ -144,7 +148,7 @@ def plot_denoised_data(
     axs[1].grid(True, linestyle="--", alpha=0.6)
 
     plt.tight_layout()
-    plt.savefig(PLOT_DIR / (STRING_PREFIX + tbt_id))
+    plt.savefig(PLOT_DIR / (CONFIG_NAME + tbt_id))
     print(f"TBT data plot saved as {tbt_id}.")
     # plt.show()
 
@@ -156,4 +160,28 @@ def plot_data_distribution(data, title="Data Distribution"):
     plt.xlabel("Value")
     plt.ylabel("Density")
     plt.grid(True)
+    plt.show()
+
+def plot_noisy_data(noisy, clean, bpm_index):
+    """
+    Plots the noisy and clean data for a given BPM index.
+
+    Args:
+        noisy (torch.Tensor): Noisy data tensor of shape (2*NBPMS, NTURNS).
+        clean (torch.Tensor): Clean data tensor.
+        bpm_index (int): BPM index (0 to NBPMS-1) for the X plane. The corresponding Y data is at index bpm_index + NBPMS.
+    """
+    # Separate channels for X and Y
+    noisy = noisy[bpm_index, :]
+    clean = clean[bpm_index, :]
+
+    # Create subplots for X and Y
+    plt.plot(noisy, label="Noisy", alpha=0.8)
+    plt.plot(clean, label="Clean", linestyle="dashed", alpha=0.7)
+    plt.xlabel("Turns")
+    plt.ylabel("Amplitude")
+    plt.title("X Plane")
+    plt.legend()
+    plt.grid(True, linestyle="--", alpha=0.6)
+    plt.tight_layout()
     plt.show()

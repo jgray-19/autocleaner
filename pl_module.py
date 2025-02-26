@@ -1,6 +1,6 @@
 import pytorch_lightning as pl
 import torch.optim as optim
-# from losses import combined_mse_correlation_loss
+# from losses import combined_mse_correlation_loss, CombinedTimeFreqLoss
 import torch
 
 class LitAutoencoder(pl.LightningModule):
@@ -10,6 +10,7 @@ class LitAutoencoder(pl.LightningModule):
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         # self.loss_fn = combined_mse_correlation_loss
+        # self.loss_fn = CombinedTimeFreqLoss()
         self.loss_fn = torch.nn.functional.mse_loss
 
     def forward(self, x):
@@ -32,7 +33,6 @@ class LitAutoencoder(pl.LightningModule):
         
         self.log("val_loss", loss, batch_size=noisy.size(0))
         return loss
-
 
 
     def configure_optimizers(self):

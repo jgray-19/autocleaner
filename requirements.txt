@@ -1,0 +1,4 @@
+matplotlib
+pytorch_lightning
+omc3
+tensorboard
