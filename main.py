@@ -1,6 +1,6 @@
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
 import numpy as np
 import pytorch_lightning as pl
@@ -15,6 +15,7 @@ from config import (
     LEARNING_RATE,
     LOAD_MODEL,
     MODEL_SAVE_PATH,
+    MODEL_TYPE,
     NUM_EPOCHS,
     PLOT_DIR,
     WEIGHT_DECAY,
@@ -57,9 +58,11 @@ else:
     torch.set_num_threads(num_cpu)
     print(f"Using {num_cpu} CPUs for training.")
     
+    
     lit_model = LitAutoencoder(
         model, learning_rate=LEARNING_RATE, weight_decay=WEIGHT_DECAY
     )
+
     log_dir=Path("/home/jovyan/")
     logger = TensorBoardLogger(log_dir, name="tensor-logs", version=CONFIG_NAME)
     save_experiment_config(log_dir / "tensor-logs/")
@@ -90,9 +93,11 @@ b4_denoise = time.time()
 sample_list = []
 for batch in val_loader:
     noisy_batch = batch["noisy"]
+
     # Process the batch through the model
     with torch.no_grad():
         denoised_batch = model(noisy_batch)
+
     # Add the model output to the batch dictionary.
     for i in range(denoised_batch.size(0)):
         sample = {

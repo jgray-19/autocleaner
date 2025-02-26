@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader, Dataset
 from turn_by_turn import TbtData, TransverseData
 from turn_by_turn.lhc import read_tbt, write_tbt
 
+
 from config import (
     BATCH_SIZE,
     BEAM,
@@ -111,6 +112,7 @@ class BPMSDataset(Dataset):
         self.noisy_norm = []
         rng = np.random.default_rng(base_seed)
 
+        self.num_files = num_files
         for _ in range(num_files):
             # Generate noise for each channel.
             noise_x = rng.normal(loc=0.0, scale=noise_factor, size=clean_data_x.shape)
@@ -136,8 +138,6 @@ class BPMSDataset(Dataset):
                 dtype=torch.float32
             )
             self.noisy_norm.append(sample)
-
-        self.num_files = num_files
 
     def __len__(self):
         return self.num_files
@@ -230,6 +230,7 @@ def build_sample_dict(sample_list: list, dataset: BPMSDataset) -> dict:
         "x_denoised": x_denoised,
         "y_denoised": y_denoised,
     }
+
 
 
 class BPMSDatasetNormalised(Dataset):
