@@ -251,6 +251,8 @@ class BPMSDatasetNormalised(Dataset):
         clean_data_x = raw[:NBPMS, :]  # (NBPMS, NTURNS)
         clean_data_y = raw[NBPMS:, :]  # (NBPMS, NTURNS)
         
+        self.raw_data = torch.stack([clean_data_x, clean_data_y], dim=0)
+        
         # Initialize scalers for each channel with feature_range (-1, 1)
         self.scaler_x = MinMaxScaler(feature_range=(-1, 1))
         self.scaler_y = MinMaxScaler(feature_range=(-1, 1))

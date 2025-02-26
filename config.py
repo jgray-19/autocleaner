@@ -40,19 +40,20 @@ NUM_PLANES = 2
 NUM_CHANNELS = NUM_PLANES
 
 # Optimisation Settings
-NUM_EPOCHS = 10
-BOTTLENECK_SIZE = 64
+NUM_EPOCHS = 300
+BOTTLENECK_SIZE = 32
 BASE_CHANNELS = 32
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-4
 
-# ALPHA = 0.5
+ALPHA = 0.5
 
 DENOISED_INDEX = -2
 
-NOISE_FACTOR=1e-5
-MODEL_TYPE = "conv"
-NORM_DATA = True
+NOISE_FACTOR=1e-7
+MODEL_TYPE = "leaky"
+LOSS_TYPE = "corr"
+NORM_DATA = False
 
 # Additional weight for the frequency component
 # FFT_WEIGHT = 1e-4 # Time loss initially on order of 0.2, Freq loss on order of 11.7 -> so 11.7*1e-4 = 1.17e-3 -> around 100 times smaller
@@ -72,10 +73,11 @@ experiment_config = {
     "base_channels": BASE_CHANNELS,
     "learning_rate": LEARNING_RATE,
     "weight_decay": WEIGHT_DECAY,
-    # "alpha": ALPHA,
+    "alpha": ALPHA,
     "noise_factor": NOISE_FACTOR,
     "model_type": MODEL_TYPE,
     "norm_data": NORM_DATA,
+    "loss_type": LOSS_TYPE,
     # "fft_weight": FFT_WEIGHT,
 }
 

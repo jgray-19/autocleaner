@@ -2,69 +2,10 @@ import torch
 import torch.nn as nn
 from omc3.harpy.frequency import windowing
 
-from config import NTURNS, HARPY_INPUT, FFT_WEIGHT, ALPHA
+from config import NTURNS, HARPY_INPUT, ALPHA
 
 WINDOW = windowing(NTURNS, window="hann")
 WINDOW = torch.tensor(WINDOW, dtype=torch.float64)
-
-class HybridMSERelativeLoss(nn.Module):
-    def __init__(self, alpha=0.5, eps=1e-5):
-        """
-        alpha: Weighting factor between absolute MSE and relative error
-        eps:   Small constant for numerical stability
-        """
-        super().__init__()
-        self.alpha = alpha
-        self.eps = eps
-
-    def forward(self, pred, target):
-        # Standard MSE
-        mse_part = (pred - target).pow(2)
-
-        # Relative error => dividing by |target|^2 (or + eps)
-        rel_part = mse_part / (target.pow(2).clamp_min(self.eps))
-
-        return self.alpha * mse_part.mean() + (1 - self.alpha) * rel_part.mean()
-
-class DedicatedMSLELoss(nn.Module):
-    def __init__(self):
-        """
-        Dedicated Mean Squared Logarithmic Error Loss for turn-by-turn data.
-        """
-        super(DedicatedMSLELoss, self).__init__()
-
-    def forward(self, pred, target):
-        # Shift values from [-1,1] to [-0.999 1.001] so that log1p is well-defined.
-        pred_shifted = pred + 1.0e-3
-        target_shifted = target + 1.0e-3
-        
-        # Apply log1p transformation.
-        log_pred = torch.log1p(pred_shifted)
-        log_target = torch.log1p(target_shifted)
-        
-        # Compute the Mean Squared Error between the log-transformed values.
-        loss = torch.mean((log_pred - log_target) ** 2)
-        return loss
-    
-class SafeMSLELoss(nn.Module):
-    def __init__(self):
-        """
-        Safe version of the Mean Squared Logarithmic Error Loss.
-        """
-        super(SafeMSLELoss, self).__init__()
-
-    def forward(self, pred, target):
-        # Shift values from [-1,1] to [0,2] so that log1p is well-defined.
-        pred_shifted = pred + 1.0
-        target_shifted = target + 1.0
-        
-        # Apply log1p transformation.
-        log_pred = torch.log1p(pred_shifted)
-        log_target = torch.log1p(target_shifted)
-        
-        # Compute the Mean Squared Error between the log-transformed values.
-        loss = torch.mean((log_pred - log_target) ** 2)
-        return loss
 
 @torch.jit.script
 def fast_fft_log_mse(
@@ -95,59 +36,103 @@ def fast_fft_log_mse(
     # Compute MSE loss
     return torch.nn.functional.mse_loss(rec_log, clean_log)
 
-class CombinedTimeFreqLoss(torch.nn.Module):
-    def __init__(self):
+class CorrelationLoss(nn.Module):
+    """
+    Computes 1 - Pearson correlation between prediction and target.
+    
+    For each sample in the batch, we:
+      1. Flatten its data
+      2. Remove mean
+      3. Compute correlation = dot(pred, target)/[||pred||*||target||]
+    Then average 1 - correlation across the batch.
+    
+    This loss encourages signals to match in shape (phase, relative amplitude)
+    but doesn't penalize absolute scale as strongly as MSE.
+    """
+    def __init__(self, eps=1e-8):
         super().__init__()
-        self.time_loss_func = correlation_loss
+        self.eps = eps
 
-    def forward(self, pred, target):
-        # Time-domain portion
-        time_loss = self.time_loss_func(pred, target)
+    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            pred:   (B, 2, NBPMS, NTURNS)
+            target: (B, 2, NBPMS, NTURNS)
+        Returns:
+            Scalar loss = average(1 - corr_i) over the batch i in [1..B].
+        """
+        B = pred.size(0)
+        loss_sum = 0.0
+        
+        # Process each sample in the batch
+        for i in range(B):
+            # Flatten from (2, NBPMS, NTURNS) -> (2*NBPMS*NTURNS,)
+            p = pred[i].view(-1)
+            t = target[i].view(-1)
+            
+            # Remove mean
+            p_centered = p - p.mean()
+            t_centered = t - t.mean()
+            
+            # Dot product for numerator
+            numerator = (p_centered * t_centered).sum()
+            
+            # Product of norms for denominator
+            denom = torch.sqrt((p_centered**2).sum() * (t_centered**2).sum()) + self.eps
+            
+            # correlation in [-1, 1]
+            corr = numerator / denom
+            
+            # Convert correlation to a loss => 1 - corr
+            loss_i = 1 - corr
+            loss_sum += loss_i
+        
+        # Average across the batch
+        return loss_sum / B
 
-        # Frequency-domain portion (log10 amplitude comparison)
-        if FFT_WEIGHT == 0:
-            return time_loss
-
-        freq_loss = fast_fft_log_mse(pred, target, WINDOW)
-
-        # Weighted combination
-        total_loss = time_loss + FFT_WEIGHT * freq_loss
-        return total_loss
-    
-def correlation_loss(pred, target, eps=1e-8):
-    # Flatten (batch, channels, length) => (batch*channels, length)
-    B, C, T = pred.shape
-    pred_flat = pred.view(B*C, T)
-    tgt_flat  = target.view(B*C, T)
-
-    # Zero-mean
-    pred_centered = pred_flat - pred_flat.mean(dim=-1, keepdim=True)
-    tgt_centered  = tgt_flat  - tgt_flat.mean(dim=-1, keepdim=True)
-
-    # Cosine similarity or correlation
-    numerator = (pred_centered * tgt_centered).sum(dim=-1)
-    denom = torch.sqrt((pred_centered**2).sum(dim=-1) * (tgt_centered**2).sum(dim=-1)) + eps
-    corr = numerator / denom  # correlation in [-1, 1]
-    
-    # Convert correlation to a loss => 1 - corr
-    loss = 1 - corr.mean()
-    return loss
-
-def combined_mse_correlation_loss(pred, target, alpha=ALPHA):
+class CombinedMSECorrelationLoss(nn.Module):
     """
-    Computes a combined loss for single-plane samples.
-    Assumes pred and target have shape (batch, NBPMS, NTURNS).
-    The loss is a weighted sum of mean squared error and a correlation loss.
-    """
-    loss_mse = torch.mean((pred - target) ** 2)
-    loss_corr = correlation_loss(pred, target)
-    return alpha * loss_mse + (1 - alpha) * loss_corr
+    A loss that combines Mean Squared Error (MSE) and a correlation-based metric:
+      loss = alpha * MSE + (1 - alpha) * (1 - corr).
 
-# class MSLELoss(nn.Module):
-#     def forward(self, pred, target):
-#         pred = torch.log1p(pred + 1)
-#         target = torch.log1p(target + 1)
-#         # Normalise all bpms for that turn using max absolute value
-#         pred = pred / (torch.max(torch.abs(pred), dim=0, keepdim=True)[0] + 1e-8)
-#         target = target / (torch.max(torch.abs(target), dim=0, keepdim=True)[0] + 1e-8)
-#         return torch.mean((pred - target) ** 2)
+    MSE enforces amplitude matching, 
+    while correlation focuses on signal shape/phase alignment.
+    """
+    def __init__(self, eps=1e-8):
+        """
+        Args:
+            alpha (float): Weight given to MSE vs. correlation. 
+                           alpha=1 => pure MSE, alpha=0 => pure correlation loss.
+            eps (float):   Small constant to avoid division by zero in correlation.
+        """
+        super().__init__()
+        self.alpha = ALPHA
+        self.eps = eps
+
+    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the combined loss over the entire batch.
+
+        Expects pred and target to have the same shape, e.g. 
+          (B, 2, NBPMS, NTURNS) or (B, Channels, H, W).
+        """
+        # 1) MSE
+        mse = torch.mean((pred - target) ** 2)
+
+        # 2) Pearson Correlation
+        # Flatten entire batch for a single correlation measure:
+        p = pred.view(-1)
+        t = target.view(-1)
+
+        p_centered = p - p.mean()
+        t_centered = t - t.mean()
+        numerator = (p_centered * t_centered).sum()
+        denom = torch.sqrt((p_centered**2).sum() * (t_centered**2).sum()) + self.eps
+        corr = numerator / denom   # in [-1, 1]
+
+        # 3) Convert correlation to 1 - corr for the correlation-loss portion
+        corr_loss = 1 - corr
+
+        # 4) Combined
+        loss = self.alpha * mse + (1 - self.alpha) * corr_loss
+        return loss
