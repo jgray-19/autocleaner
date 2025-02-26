@@ -26,7 +26,7 @@ def get_tbt_path(beam: int, nturns: int, index: int) -> Path:
 # General Settings
 BEAM = 1
 NUM_FILES = 200
-LOAD_MODEL = False
+LOAD_MODEL = True
 
 # Data Settings
 NBPMS = 563
@@ -49,10 +49,11 @@ WEIGHT_DECAY = 1e-4
 ALPHA = 0.5
 
 DENOISED_INDEX = -2
+SAMPLE_INDEX = 2
 
-NOISE_FACTOR=1e-7
+NOISE_FACTOR = 1e-7
 MODEL_TYPE = "leaky"
-LOSS_TYPE = "corr"
+LOSS_TYPE = "mse"
 NORM_DATA = False
 
 # Additional weight for the frequency component
@@ -73,7 +74,7 @@ experiment_config = {
     "base_channels": BASE_CHANNELS,
     "learning_rate": LEARNING_RATE,
     "weight_decay": WEIGHT_DECAY,
-    "alpha": ALPHA,
+    # "alpha": ALPHA,
     "noise_factor": NOISE_FACTOR,
     "model_type": MODEL_TYPE,
     "norm_data": NORM_DATA,

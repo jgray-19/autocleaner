@@ -9,17 +9,17 @@ from rdt_functions import (
 )
 
 cleaned_path = get_tbt_path(beam=BEAM, nturns=NTURNS, index=-2)
-print("Read the cleaned data")
+print("Cleaned data read in")
 run_harpy(BEAM, cleaned_path, clean=False)
 print("Done running Harpy on cleaned data")
 
 hcleaned = get_tbt_path(beam=BEAM, nturns=NTURNS, index=SAMPLE_INDEX)
-print("Read the Harpy cleaned data")
+print("Noisy data read in")
 run_harpy(BEAM, hcleaned, clean=True)
-print("Done running Harpy on Harpy cleaned data")
+print("Done running Harpy on noisy data (also cleaned this one)")
 
 nonoise_path = get_tbt_path(beam=BEAM, nturns=NTURNS, index=-1)
-print("Read the no noise data")
+print("No noise data read in")
 run_harpy(BEAM, nonoise_path, clean=False)
 print("Done running Harpy on no noise data")
 

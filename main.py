@@ -14,17 +14,18 @@ from config import (
     DENOISED_INDEX,
     LEARNING_RATE,
     LOAD_MODEL,
+    LOSS_TYPE,
     MODEL_SAVE_PATH,
     MODEL_TYPE,
     NUM_EPOCHS,
     PLOT_DIR,
+    SAMPLE_INDEX,
     WEIGHT_DECAY,
-    LOSS_TYPE,
     print_config,
     save_experiment_config,
 )
 from dataloader import build_sample_dict, load_data, write_data
-from models import Conv2DAutoencoder, SineConv2DAutoencoder, Conv2DAutoencoderLeaky
+from models import Conv2DAutoencoder, Conv2DAutoencoderLeaky, SineConv2DAutoencoder
 from pl_module import LitAutoencoder
 from visualisation import plot_data_distribution, plot_denoised_data, plot_noisy_data
 
@@ -149,7 +150,7 @@ plot_denoised_data(
 
 # Write out the denoised data
 denoised_path, denoised_sdds = write_data(select_denoised_sample, DENOISED_INDEX)
-noisy_path, noisy_sdds = write_data(selected_noisy_sample)
+noisy_path, noisy_sdds = write_data(selected_noisy_sample, SAMPLE_INDEX)
 print(f"Denoised data written to {denoised_path}")
 print(f"Noisy data written to {noisy_path}")
 
