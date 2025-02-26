@@ -178,3 +178,6 @@ model_b1/*.seq
 *.pth
 acc-models-lhc
 *.ini
+analysis/
+data/*[0-9].sdds
+data/*tfs.bz2
