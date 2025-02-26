@@ -129,12 +129,6 @@ select_denoised_sample = torch.stack(
     [sample_dict["x_denoised"], sample_dict["y_denoised"]], dim=0
 )
 
-# Check if the selected clean sample matches the original clean data
-if torch.max(torch.abs(selected_clean_sample - dataset.raw_data) < 1e-8):
-    print("Selected clean sample matches the original clean data.")
-else:
-    print("Selected clean sample does not match the original clean data.")
-
 print(f"Denoising took {time.time() - b4_denoise:.2f} seconds.")
 
 device_index = 111  # Select a BPM to plot the FFT spectrum

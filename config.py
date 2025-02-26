@@ -30,7 +30,8 @@ LOAD_MODEL = True
 
 # Data Settings
 NBPMS = 563
-NTURNS = 1000
+TOTAL_TURNS = 1500   # Total turns in the simulated data file
+NTURNS = 1000        # Training window length
 BATCH_SIZE = 20
 TRAIN_RATIO = 0.8
 MODEL_SAVE_PATH = "conv_autoencoder.pth"
@@ -54,7 +55,6 @@ SAMPLE_INDEX = 2
 NOISE_FACTOR = 1e-7
 MODEL_TYPE = "leaky"
 LOSS_TYPE = "mse"
-NORM_DATA = False
 
 # Additional weight for the frequency component
 # FFT_WEIGHT = 1e-4 # Time loss initially on order of 0.2, Freq loss on order of 11.7 -> so 11.7*1e-4 = 1.17e-3 -> around 100 times smaller
@@ -77,7 +77,6 @@ experiment_config = {
     # "alpha": ALPHA,
     "noise_factor": NOISE_FACTOR,
     "model_type": MODEL_TYPE,
-    "norm_data": NORM_DATA,
     "loss_type": LOSS_TYPE,
     # "fft_weight": FFT_WEIGHT,
 }

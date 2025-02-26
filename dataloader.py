@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import tfs
 import torch
-from sklearn.preprocessing import QuantileTransformer, MinMaxScaler
+from sklearn.preprocessing import QuantileTransformer
 from torch.utils.data import DataLoader, Dataset
 from turn_by_turn import TbtData, TransverseData
 from turn_by_turn.lhc import read_tbt, write_tbt
@@ -18,8 +18,8 @@ from config import (
     NTURNS,
     NUM_FILES,
     SEED,
+    TOTAL_TURNS,
     TRAIN_RATIO,
-    NORM_DATA,
     get_model_dir,
     get_tbt_path,
 )
@@ -27,7 +27,7 @@ from config import (
 
 def load_clean_data() -> torch.Tensor:
     # Load zero-noise data
-    sdds_data_path = get_tbt_path(beam=BEAM, nturns=NTURNS, index=-1)
+    sdds_data_path = get_tbt_path(beam=BEAM, nturns=TOTAL_TURNS, index=-1)
     sdds_data = read_tbt(sdds_data_path)
 
     # Read twiss file for beta functions
@@ -79,43 +79,46 @@ class BPMSDataset(Dataset):
     """
     def __init__(self, num_files, noise_factor=NOISE_FACTOR, base_seed=SEED):
         super().__init__()
-        # Load clean data.
-        # load_clean_data() returns a tensor of shape (NTURNS, 2*NBPMS)
-        # We transpose to get shape (2*NBPMS, NTURNS)
-        raw = load_clean_data().T  # shape: (2*NBPMS, NTURNS)
-        
-        # Split into X and Y channels.
-        clean_data_x = raw[:NBPMS, :]  # shape: (NBPMS, NTURNS)
-        clean_data_y = raw[NBPMS:, :]  # shape: (NBPMS, NTURNS)
-        
-        self.raw_data = torch.stack([clean_data_x, clean_data_y], dim=0)
+        # Load full clean data; expected shape: (2*NBPMS, TOTAL_TURNS) where TOTAL_TURNS==1500
+        raw = load_clean_data().T  # shape: (2*NBPMS, TOTAL_TURNS)
+        # Split into channels for X and Y
+        clean_data_x = raw[:NBPMS, :]  # shape: (NBPMS, TOTAL_TURNS)
+        clean_data_y = raw[NBPMS:, :]  # shape: (NBPMS, TOTAL_TURNS)
 
-        # Initialize a QuantileTransformer for each channel.
+        max_start = TOTAL_TURNS - NTURNS  # 500 turns (NTURNS is the window size)
+
+        # Initialize QuantileTransformers to map data to a normal distribution.
         self.qt_x = QuantileTransformer(output_distribution='normal')
         self.qt_y = QuantileTransformer(output_distribution='normal')
 
-        # For each channel, flatten the entire 2D image and fit the transformer.
-        x_flat = clean_data_x.reshape(-1, 1)  # shape: (NBPMS*NTURNS, 1)
+        # Fit transformers on the full clean data for each channel.
+        x_flat = clean_data_x.reshape(-1, 1) # shape: (NBPMS*TOTAL_TURNS, 1)
         x_norm_flat = self.qt_x.fit_transform(x_flat)
-        norm_clean_x = x_norm_flat.reshape(NBPMS, NTURNS)
+        norm_clean_x_full = x_norm_flat.reshape(NBPMS, TOTAL_TURNS)
 
-        y_flat = clean_data_y.reshape(-1, 1)  # shape: (NBPMS*NTURNS, 1)
+        y_flat = clean_data_y.reshape(-1, 1)
         y_norm_flat = self.qt_y.fit_transform(y_flat)
-        norm_clean_y = y_norm_flat.reshape(NBPMS, NTURNS)
+        norm_clean_y_full = y_norm_flat.reshape(NBPMS, TOTAL_TURNS)
 
-        # Store the normalized clean data as a tensor with shape (2, NBPMS, NTURNS)
-        self.clean_norm = torch.tensor(
-            np.stack([norm_clean_x, norm_clean_y], axis=0),
+        # Create a full normalized clean tensor.
+        full_clean_norm = torch.tensor(
+            np.stack([norm_clean_x_full, norm_clean_y_full], axis=0),
             dtype=torch.float32
-        )
+        )  # shape: (2, NBPMS, total_turns)
 
-        # Precompute noisy samples.
-        self.noisy_norm = []
+        # Prepare lists to store each sample's cropped clean and noisy data.
+        self.clean_norm_list = []
+        self.noisy_norm_list = []
+
         rng = np.random.default_rng(base_seed)
-
-        self.num_files = num_files
         for _ in range(num_files):
-            # Generate noise for each channel.
+            # Choose a random window start index.
+            window_start = np.random.randint(0, max_start)
+            # Crop the normalized clean window for this sample.
+            clean_window = full_clean_norm[:, :, window_start:window_start + NTURNS]
+            self.clean_norm_list.append(clean_window)
+
+            # Generate noisy data on the full raw clean data.
             noise_x = rng.normal(loc=0.0, scale=noise_factor, size=clean_data_x.shape)
             noise_y = rng.normal(loc=0.0, scale=noise_factor, size=clean_data_y.shape)
 
@@ -123,22 +126,25 @@ class BPMSDataset(Dataset):
             noisy_x = clean_data_x + noise_x
             noisy_y = clean_data_y + noise_y
 
-            # Normalize each channel using the already fitted transformers.
-            # Flatten the 2D array, transform, then reshape back.
+            # Normalize the noisy data using the previously fitted transformers.
             noisy_x_flat = noisy_x.reshape(-1, 1)
             noisy_x_norm_flat = self.qt_x.transform(noisy_x_flat)
-            noisy_x_norm = noisy_x_norm_flat.reshape(NBPMS, NTURNS)
+            noisy_x_norm_full = noisy_x_norm_flat.reshape(clean_data_x.shape[0], TOTAL_TURNS)
 
             noisy_y_flat = noisy_y.reshape(-1, 1)
             noisy_y_norm_flat = self.qt_y.transform(noisy_y_flat)
-            noisy_y_norm = noisy_y_norm_flat.reshape(NBPMS, NTURNS)
+            noisy_y_norm_full = noisy_y_norm_flat.reshape(clean_data_y.shape[0], TOTAL_TURNS)
 
-            # Stack to create a (2, NBPMS, NTURNS) tensor.
-            sample = torch.tensor(
-                np.stack([noisy_x_norm, noisy_y_norm], axis=0),
+            noisy_full_norm = torch.tensor(
+                np.stack([noisy_x_norm_full, noisy_y_norm_full], axis=0),
                 dtype=torch.float32
-            )
-            self.noisy_norm.append(sample)
+            )  # shape: (2, NBPMS, total_turns)
+
+            # Crop the same window from the noisy data.
+            noisy_window = noisy_full_norm[:, :, window_start:window_start + NTURNS]
+            self.noisy_norm_list.append(noisy_window)
+
+        self.num_files = num_files
 
     def __len__(self):
         return self.num_files
@@ -147,8 +153,8 @@ class BPMSDataset(Dataset):
         # Return a dict containing the noisy sample and the clean target,
         # both with shape (2, NBPMS, NTURNS).
         return {
-            "noisy": self.noisy_norm[idx],
-            "clean": self.clean_norm
+            "noisy": self.noisy_norm_list[idx],
+            "clean": self.clean_norm_list[idx],
         }
 
     def denormalise(self, normalized_output: torch.Tensor) -> torch.Tensor:
@@ -176,10 +182,7 @@ class BPMSDataset(Dataset):
 
 def load_data() -> Union[DataLoader, DataLoader, BPMSDataset]:
     """Loads the training and validation data."""
-    if NORM_DATA:
-        dataset = BPMSDatasetNormalised(num_files=NUM_FILES)
-    else:
-        dataset = BPMSDataset(num_files=NUM_FILES)
+    dataset = BPMSDataset(num_files=NUM_FILES)
 
     train_size = int(TRAIN_RATIO * len(dataset))
     val_size = len(dataset) - train_size
@@ -235,111 +238,3 @@ def build_sample_dict(sample_list: list, dataset: BPMSDataset) -> dict:
         "x_denoised": x_denoised,
         "y_denoised": y_denoised,
     }
-
-
-
-class BPMSDatasetNormalised(Dataset):
-    """
-    A dataset that produces samples with shape (2, NBPMS, NTURNS) where each channel
-    (X and Y) is normalized to the range [-1, 1] using a MinMaxScaler.
-    """
-    def __init__(self, num_files, noise_factor=NOISE_FACTOR, base_seed=SEED):
-        super().__init__()
-        # Load clean data: expected shape (NTURNS, 2*NBPMS)
-        raw = load_clean_data().T  # shape: (2*NBPMS, NTURNS)
-        # Split into X and Y channels.
-        clean_data_x = raw[:NBPMS, :]  # (NBPMS, NTURNS)
-        clean_data_y = raw[NBPMS:, :]  # (NBPMS, NTURNS)
-        
-        self.raw_data = torch.stack([clean_data_x, clean_data_y], dim=0)
-        
-        # Initialize scalers for each channel with feature_range (-1, 1)
-        self.scaler_x = MinMaxScaler(feature_range=(-1, 1))
-        self.scaler_y = MinMaxScaler(feature_range=(-1, 1))
-        # Initialize a QuantileTransformer for each channel.
-        self.qt_x = QuantileTransformer(output_distribution='normal')
-        self.qt_y = QuantileTransformer(output_distribution='normal')
-        
-        # Fit the scalers on the clean data (flattened).
-        x_flat = clean_data_x.reshape(-1, 1)
-        y_flat = clean_data_y.reshape(-1, 1)
-
-        x_gauss_flat = self.qt_x.fit_transform(x_flat)
-        y_gauss_flat = self.qt_y.fit_transform(y_flat)
-
-        x_norm_flat = self.scaler_x.fit_transform(x_gauss_flat)
-        y_norm_flat = self.scaler_y.fit_transform(y_gauss_flat)
-        
-        # Reshape back to the original 2D format.
-        norm_clean_x = x_norm_flat.reshape(NBPMS, NTURNS)
-        norm_clean_y = y_norm_flat.reshape(NBPMS, NTURNS)
-        
-        # Store the normalized clean data as a tensor of shape (2, NBPMS, NTURNS)
-        self.clean_norm = torch.tensor(
-            np.stack([norm_clean_x, norm_clean_y], axis=0),
-            dtype=torch.float32
-        )
-        
-        # Precompute noisy samples.
-        self.noisy_norm = []
-        rng = np.random.default_rng(base_seed)
-        for _ in range(num_files):
-            # Generate noise for each channel.
-            noise_x = rng.normal(loc=0.0, scale=noise_factor, size=clean_data_x.shape)
-            noise_y = rng.normal(loc=0.0, scale=noise_factor, size=clean_data_y.shape)
-            
-            # Create noisy data by adding noise.
-            noisy_x = clean_data_x + noise_x
-            noisy_y = clean_data_y + noise_y
-            
-            # Normalize each channel using the already fitted transformers.
-            noisy_x_flat = noisy_x.reshape(-1, 1)
-            noisy_y_flat = noisy_y.reshape(-1, 1)
-            
-            noisy_x_gauss_flat = self.qt_x.transform(noisy_x_flat)
-            noisy_y_gauss_flat = self.qt_y.transform(noisy_y_flat)
-
-            noisy_x_norm_flat = self.scaler_x.transform(noisy_x_gauss_flat)
-            noisy_y_norm_flat = self.scaler_y.transform(noisy_y_gauss_flat)
-
-            noisy_x_norm = noisy_x_norm_flat.reshape(NBPMS, NTURNS)
-            noisy_y_norm = noisy_y_norm_flat.reshape(NBPMS, NTURNS)
-            
-            sample = torch.tensor(
-                np.stack([noisy_x_norm, noisy_y_norm], axis=0),
-                dtype=torch.float32
-            )
-            self.noisy_norm.append(sample)
-            
-        self.num_files = num_files
-
-    def __len__(self):
-        return self.num_files
-
-    def __getitem__(self, idx):
-        return {
-            "noisy": self.noisy_norm[idx],
-            "clean": self.clean_norm
-        }
-    
-    def denormalise(self, normalized_output: torch.Tensor) -> torch.Tensor:
-        """
-        Inverse-transforms a normalized output (shape (2, NBPMS, NTURNS)) back to the original scale.
-        """
-        norm_x = normalized_output[0].detach().cpu().numpy()
-        norm_y = normalized_output[1].detach().cpu().numpy()
-        
-        gauss_x_flat = self.scaler_x.inverse_transform(norm_x.reshape(-1, 1))
-        gauss_y_flat = self.scaler_y.inverse_transform(norm_y.reshape(-1, 1))
-
-        orig_x_flat = self.qt_x.inverse_transform(gauss_x_flat)
-        orig_y_flat = self.qt_y.inverse_transform(gauss_y_flat)
-
-
-        orig_x = orig_x_flat.reshape(NBPMS, NTURNS)
-        orig_y = orig_y_flat.reshape(NBPMS, NTURNS)
-        orig = torch.tensor(
-            np.stack([orig_x, orig_y], axis=0),
-            dtype=torch.float32
-        )
-        return orig
