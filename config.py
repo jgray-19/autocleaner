@@ -1,4 +1,8 @@
+import json
+import os
+from datetime import datetime
 from pathlib import Path
+
 from generic_parser.tools import DotDict
 
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -21,7 +25,7 @@ def get_tbt_path(beam: int, nturns: int, index: int) -> Path:
 
 # General Settings
 BEAM = 1
-NUM_FILES = 100
+NUM_FILES = 200
 LOAD_MODEL = False
 
 # Data Settings
@@ -33,7 +37,7 @@ MODEL_SAVE_PATH = "conv_autoencoder.pth"
 MODEL_DIR = get_model_dir(beam=BEAM)
 
 NUM_PLANES = 2
-NUM_CHANNELS = NBPMS
+NUM_CHANNELS = NUM_PLANES
 
 # Optimisation Settings
 NUM_EPOCHS = 10
@@ -42,33 +46,36 @@ BASE_CHANNELS = 32
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-4
 
-BPM_DIFF_WEIGHT = 1e-1
-TURN_DIFF_WEIGHT = 1e-1
-
-ALPHA = 0.5
+# ALPHA = 0.5
 
 DENOISED_INDEX = -2
 
-NOISE_FACTOR=1e-8
+NOISE_FACTOR=1e-5
+MODEL_TYPE = "conv"
 
 # Additional weight for the frequency component
-FFT_WEIGHT = 0#1e-4 # Time loss initially on order of 0.2, Freq loss on order of 11.7 -> so 11.7*1e-4 = 1.17e-3 -> around 100 times smaller
+# FFT_WEIGHT = 1e-4 # Time loss initially on order of 0.2, Freq loss on order of 11.7 -> so 11.7*1e-4 = 1.17e-3 -> around 100 times smaller
 
-STRING_PREFIX = (
-    f"beam{BEAM}_"
-    + f"fft{FFT_WEIGHT:.1e}_"
-    + f"{BPM_DIFF_WEIGHT:.1e}diff_"
-    + f"{TURN_DIFF_WEIGHT:.1e}turn_"
-    + f"alpha{ALPHA}_"
-    + f"btnk{BOTTLENECK_SIZE}_"
-    + f"ch{BASE_CHANNELS}_"
-    + f"lr{LEARNING_RATE}_"
-    + f"wd{WEIGHT_DECAY}_"
-    + f"files{NUM_FILES}_"
-    + f"ep{NUM_EPOCHS}_"
-    + f"bs{BATCH_SIZE}_"
-    + f"noise{NOISE_FACTOR}_"
-)
+experiment_config = {
+    "beam": BEAM,
+    "num_files": NUM_FILES,
+    "load_model": LOAD_MODEL,
+    "nbpms": NBPMS,
+    "nturns": NTURNS,
+    "batch_size": BATCH_SIZE,
+    "train_ratio": TRAIN_RATIO,
+    "num_planes": NUM_PLANES,
+    "num_channels": NUM_CHANNELS,
+    "num_epochs": NUM_EPOCHS,
+    "bottleneck_size": BOTTLENECK_SIZE,
+    "base_channels": BASE_CHANNELS,
+    "learning_rate": LEARNING_RATE,
+    "weight_decay": WEIGHT_DECAY,
+    # "alpha": ALPHA,
+    "noise_factor": NOISE_FACTOR,
+    # "fft_weight": FFT_WEIGHT,
+}
+
 
 HARPY_INPUT = DotDict({
     "turn_bits": 10,
@@ -89,3 +96,12 @@ def print_config():
     for key, value in globals().items():
         if key.isupper():
             print(f"{key}: {value}")
+
+CONFIG_NAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+def save_experiment_config(output_dir, config_name= CONFIG_NAME + "_config.json"):
+    os.makedirs(output_dir, exist_ok=True)
+    config_path = os.path.join(output_dir, config_name)
+    with open(config_path, "w") as f:
+        json.dump(experiment_config, f, indent=4)
+    return config_path
