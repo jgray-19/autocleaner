@@ -23,7 +23,7 @@ from config import (
     save_experiment_config,
 )
 from dataloader import build_sample_dict, load_data, write_data
-from models import Conv2DAutoencoder
+from models import Conv2DAutoencoder, SineConv2DAutoencoder
 from pl_module import LitAutoencoder
 from visualisation import plot_data_distribution, plot_denoised_data, plot_noisy_data
 
@@ -47,7 +47,12 @@ plot_data_distribution(batch["clean"], "Clean Data Distribution")
 plot_noisy_data(batch["noisy"][0, 0, :, :], batch["clean"][0, 0, :, :], 111)
 
 # Initialize or Load Model
-model = Conv2DAutoencoder()
+if MODEL_TYPE == "sine":
+    model = SineConv2DAutoencoder()
+elif MODEL_TYPE == "conv":
+    model = Conv2DAutoencoder()
+else:
+    raise ValueError(f"Unknown model type: {MODEL_TYPE}")
 
 if LOAD_MODEL and os.path.exists(MODEL_SAVE_PATH):
     model.load_state_dict(torch.load(MODEL_SAVE_PATH))
