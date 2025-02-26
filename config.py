@@ -52,6 +52,7 @@ DENOISED_INDEX = -2
 
 NOISE_FACTOR=1e-5
 MODEL_TYPE = "conv"
+NORM_DATA = True
 
 # Additional weight for the frequency component
 # FFT_WEIGHT = 1e-4 # Time loss initially on order of 0.2, Freq loss on order of 11.7 -> so 11.7*1e-4 = 1.17e-3 -> around 100 times smaller
@@ -73,6 +74,8 @@ experiment_config = {
     "weight_decay": WEIGHT_DECAY,
     # "alpha": ALPHA,
     "noise_factor": NOISE_FACTOR,
+    "model_type": MODEL_TYPE,
+    "norm_data": NORM_DATA,
     # "fft_weight": FFT_WEIGHT,
 }
 

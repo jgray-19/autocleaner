@@ -19,6 +19,7 @@ from config import (
     NUM_FILES,
     SEED,
     TRAIN_RATIO,
+    NORM_DATA,
     get_model_dir,
     get_tbt_path,
 )
@@ -175,7 +176,11 @@ class BPMSDataset(Dataset):
 
 def load_data() -> Union[DataLoader, DataLoader, BPMSDataset]:
     """Loads the training and validation data."""
-    dataset = BPMSDataset(num_files=NUM_FILES)
+    if NORM_DATA:
+        dataset = BPMSDatasetNormalised(num_files=NUM_FILES)
+    else:
+        dataset = BPMSDataset(num_files=NUM_FILES)
+
     train_size = int(TRAIN_RATIO * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = torch.utils.data.random_split(
