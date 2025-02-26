@@ -23,7 +23,7 @@ from config import (
     save_experiment_config,
 )
 from dataloader import build_sample_dict, load_data, write_data
-from models import Conv2DAutoencoder, SineConv2DAutoencoder
+from models import Conv2DAutoencoder, SineConv2DAutoencoder, Conv2DAutoencoderLeaky
 from pl_module import LitAutoencoder
 from visualisation import plot_data_distribution, plot_denoised_data, plot_noisy_data
 
@@ -51,6 +51,8 @@ if MODEL_TYPE == "sine":
     model = SineConv2DAutoencoder()
 elif MODEL_TYPE == "conv":
     model = Conv2DAutoencoder()
+elif MODEL_TYPE == "leaky":
+    model = Conv2DAutoencoderLeaky()
 else:
     raise ValueError(f"Unknown model type: {MODEL_TYPE}")
 

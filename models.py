@@ -300,3 +300,96 @@ class ConvFC_Autoencoder(nn.Module):
         # Decoder
         x = self.decoder(x)
         return x
+
+class Conv2DAutoencoderLeaky(nn.Module):
+    def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS, bottleneck_dim=BOTTLENECK_SIZE):
+        """
+        A 2D convolutional autoencoder with LeakyReLU activations in hidden layers.
+        
+        Args:
+            in_channels (int): Number of input channels (2 for X and Y).
+            base_channels (int): Base number of channels for the convolutional layers.
+            bottleneck_dim (int): Dimensionality of the bottleneck (latent space).
+            nbpms (int): Number of BPMs (image height).
+            nturns (int): Number of turns (image width).
+        """
+        super(Conv2DAutoencoderLeaky, self).__init__()
+        
+        # ----------------------------
+        # ENCODER
+        # ----------------------------
+        # First Conv2d: downsample by a factor of 2.
+        # Second Conv2d: further downsample by a factor of 2.
+        self.encoder = nn.Sequential(
+            nn.Conv2d(in_channels, base_channels, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(base_channels),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.Conv2d(base_channels, base_channels * 2, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(base_channels * 2),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True)
+        )
+        # After two stride=2 layers:
+        #   Height: 563 -> ceil(563/2)=282 -> ceil(282/2)=141
+        #   Width:  1000 -> 500 -> 250
+        self.enc_shape = (base_channels * 2, H_ENC, W_ENC)
+        flat_dim = base_channels * 2 * H_ENC * W_ENC
+        
+        # ----------------------------
+        # BOTTLENECK
+        # ----------------------------
+        self.fc_enc = nn.Linear(flat_dim, bottleneck_dim)
+        self.fc_dec = nn.Linear(bottleneck_dim, flat_dim)
+        
+        # ----------------------------
+        # DECODER
+        # ----------------------------
+        # Use ConvTranspose2d layers to upsample. Output paddings are chosen to match the original dimensions.
+        self.decoder = nn.Sequential(
+            nn.ConvTranspose2d(
+                base_channels * 2, 
+                base_channels, 
+                kernel_size=3, 
+                stride=2, 
+                padding=1, 
+                output_padding=(1,1)
+            ),
+            nn.BatchNorm2d(base_channels),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.ConvTranspose2d(
+                base_channels, 
+                in_channels, 
+                kernel_size=3, 
+                stride=2, 
+                padding=1, 
+                output_padding=(0,1)
+            )
+        )
+        
+        # Optionally, initialize weights here.
+        self.apply(self._init_weights)
+    
+    def _init_weights(self, m):
+        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.Linear)):
+            nn.init.xavier_uniform_(m.weight)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+    
+    def forward(self, x):
+        """
+        Args:
+            x: Tensor of shape (batch_size, in_channels, nbpms, nturns)
+        Returns:
+            Reconstructed tensor with the same shape.
+        """
+        # Encoder
+        x_enc = self.encoder(x)  # Shape: (B, base_channels*2, 141, 250)
+        B = x_enc.size(0)
+        # Flatten for fully connected bottleneck
+        x_flat = x_enc.view(B, -1)
+        latent = self.fc_enc(x_flat)
+        x_dec_flat = self.fc_dec(latent)
+        # Reshape back to conv feature map dimensions
+        x_dec = x_dec_flat.view(B, *self.enc_shape)
+        # Decoder: Upsample back to original dimensions
+        x_out = self.decoder(x_dec)
+        return x_out

@@ -1,17 +1,23 @@
 import pytorch_lightning as pl
 import torch.optim as optim
-# from losses import combined_mse_correlation_loss, CombinedTimeFreqLoss
+from losses import CombinedMSECorrelationLoss, CorrelationLoss
 import torch
 
 class LitAutoencoder(pl.LightningModule):
-    def __init__(self, model, learning_rate, weight_decay):
+    def __init__(self, model, learning_rate, weight_decay, loss_type):
         super().__init__()
         self.model = model
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
-        # self.loss_fn = combined_mse_correlation_loss
-        # self.loss_fn = CombinedTimeFreqLoss()
-        self.loss_fn = torch.nn.functional.mse_loss
+        if loss_type == "mse":
+            self.loss_fn = torch.nn.functional.mse_loss
+        elif loss_type == "corr":
+            self.loss_fn = CorrelationLoss()
+        elif loss_type == "combined":
+            self.loss_fn = CombinedMSECorrelationLoss()
+        else:
+            raise ValueError(f"Unknown loss type: {loss_type}")
+
 
     def forward(self, x):
         return self.model(x)
