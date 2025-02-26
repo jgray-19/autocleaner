@@ -9,7 +9,6 @@ from torch.utils.data import DataLoader, Dataset
 from turn_by_turn import TbtData, TransverseData
 from turn_by_turn.lhc import read_tbt, write_tbt
 
-
 from config import (
     BATCH_SIZE,
     BEAM,
@@ -79,46 +78,39 @@ class BPMSDataset(Dataset):
     """
     def __init__(self, num_files, noise_factor=NOISE_FACTOR, base_seed=SEED):
         super().__init__()
-        # Load full clean data; expected shape: (2*NBPMS, TOTAL_TURNS) where TOTAL_TURNS==1500
+        # Load clean data.
+        # load_clean_data() returns a tensor of shape (TOTAL_TURNS, 2*NBPMS)
+        # We transpose to get shape (2*NBPMS, TOTAL_TURNS)
         raw = load_clean_data().T  # shape: (2*NBPMS, TOTAL_TURNS)
-        # Split into channels for X and Y
+        # Split into X and Y channels.
         clean_data_x = raw[:NBPMS, :]  # shape: (NBPMS, TOTAL_TURNS)
         clean_data_y = raw[NBPMS:, :]  # shape: (NBPMS, TOTAL_TURNS)
 
-        max_start = TOTAL_TURNS - NTURNS  # 500 turns (NTURNS is the window size)
-
-        # Initialize QuantileTransformers to map data to a normal distribution.
+        # Initialize a QuantileTransformer for each channel.
         self.qt_x = QuantileTransformer(output_distribution='normal')
         self.qt_y = QuantileTransformer(output_distribution='normal')
 
-        # Fit transformers on the full clean data for each channel.
-        x_flat = clean_data_x.reshape(-1, 1) # shape: (NBPMS*TOTAL_TURNS, 1)
+        # For each channel, flatten the entire 2D image and fit the transformer.
+        x_flat = clean_data_x.reshape(-1, 1)  # shape: (NBPMS*TOTAL_TURNS, 1)
         x_norm_flat = self.qt_x.fit_transform(x_flat)
-        norm_clean_x_full = x_norm_flat.reshape(NBPMS, TOTAL_TURNS)
+        norm_clean_x = x_norm_flat.reshape(NBPMS, TOTAL_TURNS)
 
-        y_flat = clean_data_y.reshape(-1, 1)
+        y_flat = clean_data_y.reshape(-1, 1)  # shape: (NBPMS*TOTAL_TURNS, 1)
         y_norm_flat = self.qt_y.fit_transform(y_flat)
-        norm_clean_y_full = y_norm_flat.reshape(NBPMS, TOTAL_TURNS)
+        norm_clean_y = y_norm_flat.reshape(NBPMS, TOTAL_TURNS)
 
-        # Create a full normalized clean tensor.
-        full_clean_norm = torch.tensor(
-            np.stack([norm_clean_x_full, norm_clean_y_full], axis=0),
+        # Store the normalized clean data as a tensor with shape (2, NBPMS, TOTAL_TURNS)
+        self.clean_norm = torch.tensor(
+            np.stack([norm_clean_x, norm_clean_y], axis=0),
             dtype=torch.float32
-        )  # shape: (2, NBPMS, total_turns)
+        )
 
-        # Prepare lists to store each sample's cropped clean and noisy data.
-        self.clean_norm_list = []
-        self.noisy_norm_list = []
-
+        # Precompute noisy samples.
+        self.noisy_norm = []
         rng = np.random.default_rng(base_seed)
-        for _ in range(num_files):
-            # Choose a random window start index.
-            window_start = np.random.randint(0, max_start)
-            # Crop the normalized clean window for this sample.
-            clean_window = full_clean_norm[:, :, window_start:window_start + NTURNS]
-            self.clean_norm_list.append(clean_window)
 
-            # Generate noisy data on the full raw clean data.
+        for _ in range(num_files):
+            # Generate noise for each channel.
             noise_x = rng.normal(loc=0.0, scale=noise_factor, size=clean_data_x.shape)
             noise_y = rng.normal(loc=0.0, scale=noise_factor, size=clean_data_y.shape)
 
@@ -126,23 +118,22 @@ class BPMSDataset(Dataset):
             noisy_x = clean_data_x + noise_x
             noisy_y = clean_data_y + noise_y
 
-            # Normalize the noisy data using the previously fitted transformers.
+            # Normalize each channel using the already fitted transformers.
+            # Flatten the 2D array, transform, then reshape back.
             noisy_x_flat = noisy_x.reshape(-1, 1)
             noisy_x_norm_flat = self.qt_x.transform(noisy_x_flat)
-            noisy_x_norm_full = noisy_x_norm_flat.reshape(clean_data_x.shape[0], TOTAL_TURNS)
+            noisy_x_norm = noisy_x_norm_flat.reshape(NBPMS, TOTAL_TURNS)
 
             noisy_y_flat = noisy_y.reshape(-1, 1)
             noisy_y_norm_flat = self.qt_y.transform(noisy_y_flat)
-            noisy_y_norm_full = noisy_y_norm_flat.reshape(clean_data_y.shape[0], TOTAL_TURNS)
+            noisy_y_norm = noisy_y_norm_flat.reshape(NBPMS, TOTAL_TURNS)
 
-            noisy_full_norm = torch.tensor(
-                np.stack([noisy_x_norm_full, noisy_y_norm_full], axis=0),
+            # Stack to create a (2, NBPMS, TOTAL_TURNS) tensor.
+            sample = torch.tensor(
+                np.stack([noisy_x_norm, noisy_y_norm], axis=0),
                 dtype=torch.float32
-            )  # shape: (2, NBPMS, total_turns)
-
-            # Crop the same window from the noisy data.
-            noisy_window = noisy_full_norm[:, :, window_start:window_start + NTURNS]
-            self.noisy_norm_list.append(noisy_window)
+            )
+            self.noisy_norm.append(sample)
 
         self.num_files = num_files
 
@@ -150,11 +141,17 @@ class BPMSDataset(Dataset):
         return self.num_files
 
     def __getitem__(self, idx):
-        # Return a dict containing the noisy sample and the clean target,
-        # both with shape (2, NBPMS, NTURNS).
+        # Dynamically select a window for each call
+        max_start = TOTAL_TURNS - NTURNS
+        start_idx = np.random.randint(0, max_start + 1)
+        end_idx = start_idx + NTURNS
+
+        noisy_sample = self.noisy_norm[idx][:, :, start_idx:end_idx]
+        clean_sample = self.clean_norm[:, :, start_idx:end_idx]
+
         return {
-            "noisy": self.noisy_norm_list[idx],
-            "clean": self.clean_norm_list[idx],
+            "noisy": noisy_sample,
+            "clean": clean_sample
         }
 
     def denormalise(self, normalized_output: torch.Tensor) -> torch.Tensor:
@@ -183,7 +180,6 @@ class BPMSDataset(Dataset):
 def load_data() -> Union[DataLoader, DataLoader, BPMSDataset]:
     """Loads the training and validation data."""
     dataset = BPMSDataset(num_files=NUM_FILES)
-
     train_size = int(TRAIN_RATIO * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = torch.utils.data.random_split(
