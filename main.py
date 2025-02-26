@@ -19,6 +19,7 @@ from config import (
     NUM_EPOCHS,
     PLOT_DIR,
     WEIGHT_DECAY,
+    LOSS_TYPE,
     print_config,
     save_experiment_config,
 )
@@ -64,13 +65,15 @@ else:
     num_cpu = min(os.cpu_count(), 32)
     torch.set_num_threads(num_cpu)
     print(f"Using {num_cpu} CPUs for training.")
-    
-    
+
     lit_model = LitAutoencoder(
-        model, learning_rate=LEARNING_RATE, weight_decay=WEIGHT_DECAY
+        model,
+        loss_type=LOSS_TYPE,
+        learning_rate=LEARNING_RATE,
+        weight_decay=WEIGHT_DECAY,
     )
 
-    log_dir=Path("/home/jovyan/")
+    log_dir = Path("/home/jovyan/")
     logger = TensorBoardLogger(log_dir, name="tensor-logs", version=CONFIG_NAME)
     save_experiment_config(log_dir / "tensor-logs/")
 
