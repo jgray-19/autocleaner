@@ -39,7 +39,7 @@ def load_clean_data() -> torch.Tensor:
     x_data = sdds_data.matrices[0].X.to_numpy().T / sqrt_betax[None, :]
     y_data = sdds_data.matrices[0].Y.to_numpy().T / sqrt_betay[None, :]
 
-    assert x_data.shape == y_data.shape == (NTURNS, NBPMS), "Data shape mismatch"
+    assert x_data.shape == y_data.shape == (TOTAL_TURNS, NBPMS), "Data shape mismatch"
 
     # Concatenate along axis=1 so that each sample becomes (NTURNS, 2*NBPMS)
     xy_data = np.concatenate([x_data, y_data], axis=1)

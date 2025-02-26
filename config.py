@@ -26,7 +26,7 @@ def get_tbt_path(beam: int, nturns: int, index: int) -> Path:
 # General Settings
 BEAM = 1
 NUM_FILES = 200
-LOAD_MODEL = True
+LOAD_MODEL = False
 
 # Data Settings
 NBPMS = 563
