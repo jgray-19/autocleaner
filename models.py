@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-from config import BASE_CHANNELS, BOTTLENECK_SIZE, NUM_PLANES
+import torch.nn.functional as F
+from config import BASE_CHANNELS, BOTTLENECK_SIZE, NUM_PLANES, INIT, UNET_DEPTH#, NBPMS, NTURNS
 
 H_ENC = 141
 W_ENC = 250
@@ -150,157 +151,6 @@ class SineConv2DAutoencoder(nn.Module):
         out = self.decoder(x_dec)
         return out
 
-
-COMPRESSED_LENGTH = 125  # Compressed length for the bottleneck layer (selected for 1000 turns)
-class ImprovedConvAutoencoder(nn.Module):
-    def __init__(self, input_channels, bottleneck_size=16):  # Default 16 - Seems to be best
-        super(ImprovedConvAutoencoder, self).__init__()
-        
-        # Encoder
-        self.encoder = nn.Sequential(
-            nn.Conv1d(input_channels, 32, kernel_size=3, stride=2, padding=1, dtype=torch.float32),
-            nn.BatchNorm1d(32, dtype=torch.float32),
-            nn.LeakyReLU(0.01),
-            nn.Conv1d(32, 64, kernel_size=3, stride=2, padding=1, dilation=2, dtype=torch.float32),
-            nn.BatchNorm1d(64, dtype=torch.float32),
-            nn.LeakyReLU(0.01),
-            nn.Conv1d(64, 128, kernel_size=3, stride=2, padding=1, dtype=torch.float32),
-            nn.BatchNorm1d(128, dtype=torch.float32),
-            nn.LeakyReLU(0.01)
-        )
-        
-        # Bottleneck
-        self.bottleneck = nn.Sequential(
-            nn.Linear(128 * COMPRESSED_LENGTH, bottleneck_size, dtype=torch.float32),
-            nn.ReLU(),
-            nn.Linear(bottleneck_size, 128 * COMPRESSED_LENGTH, dtype=torch.float32)
-        )
-        
-        # Decoder
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose1d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1, dtype=torch.float32),
-            nn.BatchNorm1d(64, dtype=torch.float32),
-            nn.LeakyReLU(0.01),
-            nn.ConvTranspose1d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1, dtype=torch.float32),
-            nn.BatchNorm1d(32, dtype=torch.float32),
-            nn.LeakyReLU(0.01),
-            nn.ConvTranspose1d(32, input_channels, kernel_size=3, stride=2, padding=1, output_padding=1, dtype=torch.float32),
-            nn.Tanh()
-        )
-
-    def forward(self, x):
-        x = self.encoder(x)
-        x = self.bottleneck(x.view(x.size(0), -1)).view(x.size(0), 128, -1)
-        x = self.decoder(x)
-        return x
-
-class SimpleConvAutoencoder(nn.Module):
-    def __init__(self, input_channels=563, latent_channels=32):
-        super().__init__()
-        # Encoder
-        self.encoder = nn.Sequential(
-            nn.Conv1d(input_channels, 32, kernel_size=3, stride=2, padding=1), 
-            nn.ReLU(inplace=True),
-            nn.Conv1d(32, latent_channels, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(inplace=True),
-        )
-        # Decoder
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose1d(latent_channels, 32, kernel_size=4, stride=2, padding=1),
-            nn.ReLU(inplace=True),
-            nn.ConvTranspose1d(32, input_channels, kernel_size=4, stride=2, padding=1),
-            nn.Tanh(), 
-        )
-
-    def forward(self, x):
-        x = self.encoder(x)  # shape => (B, latent_channels, compressed_length)
-        x = self.decoder(x)  # shape => (B, input_channels, original_length)
-        return x
-    
-def init_weights(m):
-    if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d, nn.Linear)):
-        nn.init.xavier_uniform_(m.weight)
-        if m.bias is not None:
-            nn.init.zeros_(m.bias)
-
-class ConvFC_Autoencoder(nn.Module):
-    def __init__(
-        self,
-        input_channels: int,   # e.g. number of BPMs if you treat each BPM as a channel
-        input_length: int,     # e.g. number of turns
-        bottleneck_dim: int=64 # fully connected bottleneck size
-    ):
-        super().__init__()
-
-        # -------------------------
-        # 1) ENCODER
-        # -------------------------
-        # Two convolutional layers, each halving the time dimension (stride=2).
-        # If you prefer dividing by 4 in one layer, just set stride=4 or add more layers.
-        self.encoder = nn.Sequential(
-            nn.Conv1d(input_channels, 32, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm1d(32),
-            nn.ReLU(inplace=True),
-            nn.Conv1d(32, 64, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm1d(64),
-            nn.ReLU(inplace=True),
-        )
-
-        # After two stride=2 layers, the time dimension is divided by 4:
-        #   new_length = input_length // 2 // 2 = input_length // 4
-        reduced_length = input_length // 4
-        # Flatten dimension = (#channels after last conv) * reduced_length
-        self.flat_dim = 64 * reduced_length
-
-        # -------------------------
-        # 2) BOTTLENECK (Fully Connected)
-        # -------------------------
-        self.fc_enc = nn.Linear(self.flat_dim, bottleneck_dim)
-        self.fc_dec = nn.Linear(bottleneck_dim, self.flat_dim)
-
-        # -------------------------
-        # 3) DECODER
-        # -------------------------
-        # We unflatten from (batch, flat_dim) to (batch, 64, reduced_length)
-        # Then use ConvTranspose1d to upsample by factors of 2, reversing the encoder.
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose1d(64, 32, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm1d(32),
-            nn.ReLU(inplace=True),
-            nn.ConvTranspose1d(32, input_channels, kernel_size=4, stride=2, padding=1),
-            # If your data is strictly within [-1,1], you can add nn.Tanh() here;
-            # for unbounded (normal) data, leaving it linear is often fine.
-        )
-
-        # Apply Xavier uniform initialization to all Conv/Linear layers
-        self.apply(self._init_weights)
-
-    def _init_weights(self, m):
-        if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d, nn.Linear)):
-            nn.init.xavier_uniform_(m.weight)
-            if m.bias is not None:
-                nn.init.zeros_(m.bias)
-
-    def forward(self, x):
-        """
-        x shape: (batch_size, input_channels, input_length)
-        Returns reconstructed output with same shape.
-        """
-        # Encoder
-        x = self.encoder(x)
-        # Flatten for the fully connected bottleneck
-        x = x.view(x.size(0), -1)
-        # FC bottleneck
-        x = self.fc_enc(x)
-        x = self.fc_dec(x)
-        # Unflatten
-        batch_size = x.size(0)
-        # shape => (batch_size, 64, input_length//4)
-        x = x.view(batch_size, 64, -1)
-        # Decoder
-        x = self.decoder(x)
-        return x
-
 class Conv2DAutoencoderLeaky(nn.Module):
     def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS, bottleneck_dim=BOTTLENECK_SIZE):
         """
@@ -370,7 +220,12 @@ class Conv2DAutoencoderLeaky(nn.Module):
     
     def _init_weights(self, m):
         if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.Linear)):
-            nn.init.xavier_uniform_(m.weight)
+            if INIT == "xavier":
+                nn.init.xavier_uniform_(m.weight)
+            elif INIT == "kaiming":
+                nn.init.kaiming_normal_(m.weight, nonlinearity='leaky_relu')
+            else:
+                raise ValueError(f"Unknown init type: {INIT}")
             if m.bias is not None:
                 nn.init.zeros_(m.bias)
     
@@ -393,3 +248,490 @@ class Conv2DAutoencoderLeaky(nn.Module):
         # Decoder: Upsample back to original dimensions
         x_out = self.decoder(x_dec)
         return x_out
+
+class Conv2DAutoencoderLeakyNoFC(nn.Module):
+    def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS):
+        """
+        A fully convolutional autoencoder with LeakyReLU activations,
+        similar to Conv2DAutoencoderLeaky but without a fully connected bottleneck.
+        
+        Args:
+            in_channels (int): Number of input channels (e.g., 2 for X and Y).
+            base_channels (int): Base number of channels for the conv layers.
+        """
+        super(Conv2DAutoencoderLeakyNoFC, self).__init__()
+        
+        # ----------------------------
+        # ENCODER: Convolutional downsampling.
+        # ----------------------------
+        self.encoder = nn.Sequential(
+            # First conv: Downsample by factor 2.
+            nn.Conv2d(in_channels, base_channels, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(base_channels),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            # Second conv: Downsample by factor 2.
+            nn.Conv2d(base_channels, base_channels * 2, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(base_channels * 2),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True)
+        )
+        # After two downsamplings, for an input of shape (B, in_channels, 563, 1000),
+        # the feature map will be (B, base_channels*2, 141, 250) (approximately).
+        
+        # ----------------------------
+        # DECODER: Convolutional upsampling.
+        # ----------------------------
+        self.decoder = nn.Sequential(
+            nn.ConvTranspose2d(
+                base_channels * 2,
+                base_channels,
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                output_padding=(1, 1)
+            ),
+            nn.BatchNorm2d(base_channels),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.ConvTranspose2d(
+                base_channels,
+                in_channels,
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                output_padding=(0, 1)
+            )
+            # No final activation; keeping the output linear allows full-range reconstruction.
+        )
+        
+        # Initialize weights (using your chosen initialization scheme)
+        self.apply(self._init_weights)
+        
+    def _init_weights(self, m):
+        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+            if INIT == "xavier":
+                nn.init.xavier_uniform_(m.weight)
+            elif INIT == "kaiming":
+                nn.init.kaiming_normal_(m.weight, nonlinearity='leaky_relu')
+            else:
+                raise ValueError(f"Unknown init type: {INIT}")
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+                
+    def forward(self, x):
+        # Encode input to a spatial latent representation.
+        x_enc = self.encoder(x)
+        # Decode back to the original dimensions.
+        x_out = self.decoder(x_enc)
+        return x_out
+
+class FourierLayer(nn.Module):
+    """
+    A Fourier layer that transforms input features to the frequency domain,
+    applies a learnable complex multiplication to a selected set of low-frequency modes,
+    and then transforms back to the spatial domain.
+    """
+    def __init__(self, in_channels, out_channels, modes_height=20, modes_width=20):
+        """
+        Args:
+            in_channels (int): Number of input channels.
+            out_channels (int): Number of output channels.
+            modes_height (int): Number of Fourier modes to keep along the height dimension.
+            modes_width (int): Number of Fourier modes to keep along the width dimension.
+        """
+        super(FourierLayer, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.modes_height = modes_height
+        self.modes_width = modes_width
+
+        # Initialize a learnable complex weight for the lower-frequency modes.
+        # Shape: (in_channels, out_channels, modes_height, modes_width)
+        scale = 1 / (in_channels * out_channels)
+        self.weight = nn.Parameter(
+            scale * torch.randn(in_channels, out_channels, modes_height, modes_width, dtype=torch.cfloat)
+        )
+
+    def forward(self, x):
+        """
+        Args:
+            x (torch.Tensor): Input tensor of shape (B, in_channels, H, W)
+        Returns:
+            torch.Tensor: Output tensor of shape (B, out_channels, H, W)
+        """
+        B, C, H, W = x.shape
+        # Compute 2D Fourier transform (real FFT) along the spatial dimensions.
+        x_ft = torch.fft.rfft2(x, norm="ortho")  # shape: (B, C, H, W//2 + 1)
+
+        # Prepare an output Fourier tensor with shape (B, out_channels, H, W//2+1)
+        out_ft = torch.zeros(B, self.out_channels, H, x_ft.shape[-1],
+                               device=x.device, dtype=torch.cfloat)
+        
+        # Limit the number of modes to process.
+        mh = min(self.modes_height, H)
+        mw = min(self.modes_width, x_ft.shape[-1])
+        
+        # Correct einsum: Multiply x_ft slice of shape (B, in_channels, mh, mw)
+        # with weight of shape (in_channels, out_channels, mh, mw) to produce (B, out_channels, mh, mw).
+        out_ft[:, :, :mh, :mw] = torch.einsum("bcij,cdij->bdij",
+                                               x_ft[:, :, :mh, :mw],
+                                               self.weight[:, :, :mh, :mw])
+        
+        # Inverse FFT to convert back to spatial domain.
+        x_out = torch.fft.irfft2(out_ft, s=(H, W), norm="ortho")
+        return x_out
+
+class Conv2DAutoencoderLeakyFourier(nn.Module):
+    """
+    A fully convolutional autoencoder that integrates a Fourier layer in the latent space.
+    The encoder downsamples the input, the Fourier layer processes the latent features,
+    and the decoder upsamples back to the original dimensions.
+    """
+    def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS,
+                 modes_height=20, modes_width=20):
+        super(Conv2DAutoencoderLeakyFourier, self).__init__()
+        
+        # Encoder: Two convolutional layers with downsampling.
+        self.encoder = nn.Sequential(
+            nn.Conv2d(in_channels, base_channels, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(base_channels),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.Conv2d(base_channels, base_channels * 2, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(base_channels * 2),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True)
+        )
+        
+        # Fourier layer applied to the latent representation.
+        self.fourier = FourierLayer(in_channels=base_channels * 2,
+                                    out_channels=base_channels * 2,
+                                    modes_height=modes_height,
+                                    modes_width=modes_width)
+        
+        # Decoder: Two transposed convolutional layers to upsample.
+        self.decoder = nn.Sequential(
+            nn.ConvTranspose2d(
+                base_channels * 2,
+                base_channels,
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                output_padding=(1, 1)
+            ),
+            nn.BatchNorm2d(base_channels),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.ConvTranspose2d(
+                base_channels,
+                in_channels,
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                output_padding=(0, 1)
+            )
+            # No final activation to allow a linear output range.
+        )
+        
+        self.apply(self._init_weights)
+    
+    def _init_weights(self, m):
+        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+            if INIT == "xavier":
+                nn.init.xavier_uniform_(m.weight)
+            elif INIT == "kaiming":
+                nn.init.kaiming_normal_(m.weight, nonlinearity="leaky_relu")
+            else:
+                raise ValueError(f"Unknown init type: {INIT}")
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+    
+    def forward(self, x):
+        x_enc = self.encoder(x)
+        x_fourier = self.fourier(x_enc)
+        x_out = self.decoder(x_fourier)
+        return x_out
+
+class DeepConvAutoencoder(nn.Module):
+    def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS):
+        """
+        A deep, fully convolutional autoencoder.
+        This architecture uses four convolutional layers to downsample
+        and four transposed convolutional layers to upsample.
+        
+        With base_channels=64, the encoder will have roughly 1.55M parameters,
+        so the total model (encoder + decoder) is well above 1M parameters.
+        
+        Args:
+            in_channels (int): Number of input channels (e.g., 2 for X and Y).
+            base_channels (int): Base number of channels for the first conv layer.
+        """
+        super(DeepConvAutoencoder, self).__init__()
+        # Encoder: 4 layers downsampling by factor of 2 each.
+        # Input shape: (B, 2, 563, 1000)
+        # After Layer 1: (B, 64, ceil(563/2)=282, ceil(1000/2)=500)
+        # After Layer 2: (B, 128, ceil(282/2)=141, ceil(500/2)=250)
+        # After Layer 3: (B, 256, ceil(141/2)=71, ceil(250/2)=125)
+        # After Layer 4: (B, 512, ceil(71/2)=36, ceil(125/2)=63)
+        self.encoder = nn.Sequential(
+            nn.Conv2d(in_channels, base_channels, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(base_channels),
+            nn.LeakyReLU(0.01, inplace=True),
+
+            nn.Conv2d(base_channels, base_channels * 2, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(base_channels * 2),
+            nn.LeakyReLU(0.01, inplace=True),
+
+            nn.Conv2d(base_channels * 2, base_channels * 4, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(base_channels * 4),
+            nn.LeakyReLU(0.01, inplace=True),
+
+            nn.Conv2d(base_channels * 4, base_channels * 8, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(base_channels * 8),
+            nn.LeakyReLU(0.01, inplace=True)
+        )
+
+        # Decoder: 4 layers upsampling to recover the original dimensions.
+        # We choose output_padding carefully so that:
+        #   - Height: 36 -> 71 -> 141 -> 282 -> 563
+        #   - Width:  63 -> 125 -> 250 -> 500 -> 1000
+        self.decoder = nn.Sequential(
+            # Decoder Layer 1: (B,512,36,63) -> (B,256,71,125)
+            nn.ConvTranspose2d(base_channels * 8, base_channels * 4,
+                               kernel_size=3, stride=2, padding=1, output_padding=(0, 0)),
+            nn.BatchNorm2d(base_channels * 4),
+            nn.LeakyReLU(0.01, inplace=True),
+
+            # Decoder Layer 2: (B,256,71,125) -> (B,128,141,250)
+            nn.ConvTranspose2d(base_channels * 4, base_channels * 2,
+                               kernel_size=3, stride=2, padding=1, output_padding=(0, 1)),
+            nn.BatchNorm2d(base_channels * 2),
+            nn.LeakyReLU(0.01, inplace=True),
+
+            # Decoder Layer 3: (B,128,141,250) -> (B,64,282,500)
+            nn.ConvTranspose2d(base_channels * 2, base_channels,
+                               kernel_size=3, stride=2, padding=1, output_padding=(1, 1)),
+            nn.BatchNorm2d(base_channels),
+            nn.LeakyReLU(0.01, inplace=True),
+
+            # Decoder Layer 4: (B,64,282,500) -> (B,2,563,1000)
+            nn.ConvTranspose2d(base_channels, in_channels,
+                               kernel_size=3, stride=2, padding=1, output_padding=(0, 1))
+            # No final activation, to allow a linear output range.
+        )
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+            if INIT == "xavier":
+                nn.init.xavier_uniform_(m.weight)
+            elif INIT == "kaiming":
+                nn.init.kaiming_normal_(m.weight, nonlinearity="leaky_relu")
+            else:
+                raise ValueError(f"Unknown init type: {INIT}")
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+
+    def forward(self, x):
+        x_enc = self.encoder(x)
+        x_out = self.decoder(x_enc)
+        return x_out
+
+class UNetAutoencoder(nn.Module):
+    def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS, depth=UNET_DEPTH):
+        """
+        A U-Net style autoencoder for oscillatory data.
+        
+        Design rationale:
+          • Fully convolutional to preserve spatial (phase and frequency) structure.
+          • Skip connections ensure fine details (critical for phase and oscillatory features)
+            are preserved during the encoding-decoding process.
+          • No fully connected bottleneck is used because it would mix spatial information,
+            potentially destroying the local phase relationships.
+          • The depth (number of down/upsampling blocks) controls the receptive field so that both
+            local and global oscillatory patterns can be captured.
+        
+        Args:
+            in_channels (int): Number of input channels (e.g. 2 for X and Y data).
+            base_channels (int): Number of channels for the first encoder block.
+            depth (int): Number of downsampling steps.
+        """
+        super(UNetAutoencoder, self).__init__()
+        self.depth = depth
+
+        # Encoder: Create a list of convolutional blocks.
+        self.encoders = nn.ModuleList()
+        prev_channels = in_channels
+        curr_channels = base_channels
+        for i in range(depth):
+            self.encoders.append(self.conv_block(prev_channels, curr_channels))
+            prev_channels = curr_channels
+            curr_channels *= 2
+
+        # Bottleneck (fully convolutional)
+        self.bottleneck = self.conv_block(prev_channels, curr_channels)
+
+        # Decoder: Each block upsamples and then concatenates with the corresponding encoder output.
+        self.decoders = nn.ModuleList()
+        for i in range(depth):
+            curr_channels //= 2
+            self.decoders.append(nn.ModuleDict({
+                'up_conv': nn.ConvTranspose2d(curr_channels * 2, curr_channels, kernel_size=2, stride=2),
+                'conv': self.conv_block(curr_channels * 2, curr_channels)
+            }))
+
+        # Final layer to bring the number of channels back to in_channels.
+        self.final_conv = nn.Conv2d(base_channels, in_channels, kernel_size=1)
+
+    def conv_block(self, in_ch, out_ch):
+        """A double convolution block with BatchNorm and LeakyReLU activations."""
+        return nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_ch),
+            nn.LeakyReLU(0.01, inplace=True),
+            nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_ch),
+            nn.LeakyReLU(0.01, inplace=True)
+        )
+
+    def forward(self, x):
+        skip_connections = []
+
+        # Encoder path
+        out = x
+        for encoder in self.encoders:
+            out = encoder(out)
+            skip_connections.append(out)
+            out = F.max_pool2d(out, kernel_size=2, stride=2)
+
+        # Bottleneck (no fully connected layers—preserving spatial layout)
+        out = self.bottleneck(out)
+
+        # Decoder path with skip connections
+        for decoder in self.decoders:
+            out = decoder['up_conv'](out)
+            # Retrieve corresponding encoder output (skip connection)
+            skip = skip_connections.pop()
+            # In case dimensions do not match exactly (due to rounding), we pad accordingly.
+            if out.size()[2:] != skip.size()[2:]:
+                diffY = skip.size(2) - out.size(2)
+                diffX = skip.size(3) - out.size(3)
+                out = F.pad(out, [diffX // 2, diffX - diffX // 2,
+                                  diffY // 2, diffY - diffY // 2])
+            # Concatenate along channel dimension
+            out = torch.cat([skip, out], dim=1)
+            out = decoder['conv'](out)
+
+        # Final output convolution
+        out = self.final_conv(out)
+        return out
+
+class UNetAutoencoderFixedDepth(nn.Module):
+    def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS):
+        """
+        A U-Net–style autoencoder with fixed depth 4.
+        
+        Design rationale:
+          • Fully convolutional: preserves spatial structure (critical for preserving phase and frequency).
+          • Skip connections: help retain fine oscillatory details by merging low-level encoder features with decoder features.
+          • Fixed depth (4 levels): For inputs of shape (2, 563, 1000), four downsamplings yield feature maps
+            with sizes roughly [282, 141, 71, 36] in height and [500, 250, 125, 63] in width—sufficient for multi-scale
+            feature extraction without over-collapsing spatial information.
+          • No fully connected bottleneck: This avoids losing local relationships that are essential in oscillatory data.
+        
+        Args:
+            in_channels (int): Number of input channels (e.g. 2 for X and Y BPM data).
+            base_channels (int): Number of channels for the first encoder block.
+        """
+        super(UNetAutoencoderFixedDepth, self).__init__()
+        
+        # ----- Encoder -----
+        # Level 1
+        self.enc1 = self.conv_block(in_channels, base_channels)
+        # Level 2
+        self.enc2 = self.conv_block(base_channels, base_channels * 2)
+        # Level 3
+        self.enc3 = self.conv_block(base_channels * 2, base_channels * 4)
+        # Level 4
+        self.enc4 = self.conv_block(base_channels * 4, base_channels * 8)
+        
+        # Bottleneck (fully convolutional; preserves spatial dimensions)
+        self.bottleneck = self.conv_block(base_channels * 8, base_channels * 16)
+        
+        # ----- Decoder -----
+        # Level 4 decoding: upsample bottleneck to combine with encoder level 4
+        self.up4 = nn.ConvTranspose2d(base_channels * 16, base_channels * 8, kernel_size=2, stride=2)
+        self.dec4 = self.conv_block(base_channels * 16, base_channels * 8)  # concatenated channels
+        
+        # Level 3 decoding
+        self.up3 = nn.ConvTranspose2d(base_channels * 8, base_channels * 4, kernel_size=2, stride=2)
+        self.dec3 = self.conv_block(base_channels * 8, base_channels * 4)
+        
+        # Level 2 decoding
+        self.up2 = nn.ConvTranspose2d(base_channels * 4, base_channels * 2, kernel_size=2, stride=2)
+        self.dec2 = self.conv_block(base_channels * 4, base_channels * 2)
+        
+        # Level 1 decoding
+        self.up1 = nn.ConvTranspose2d(base_channels * 2, base_channels, kernel_size=2, stride=2)
+        self.dec1 = self.conv_block(base_channels * 2, base_channels)
+        
+        # Final output convolution to get back to in_channels
+        self.final_conv = nn.Conv2d(base_channels, in_channels, kernel_size=1)
+    
+    def conv_block(self, in_ch, out_ch):
+        """A double convolution block with BatchNorm and LeakyReLU activations."""
+        return nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_ch),
+            nn.LeakyReLU(0.01, inplace=True),
+            nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_ch),
+            nn.LeakyReLU(0.01, inplace=True)
+        )
+    
+    def forward(self, x):
+        # ----- Encoder pathway -----
+        e1 = self.enc1(x)         # shape: (B, base_channels, H, W)
+        p1 = F.max_pool2d(e1, 2)    # Downsample by 2
+        e2 = self.enc2(p1)        # shape: (B, base_channels*2, H/2, W/2)
+        p2 = F.max_pool2d(e2, 2)
+        e3 = self.enc3(p2)        # shape: (B, base_channels*4, H/4, W/4)
+        p3 = F.max_pool2d(e3, 2)
+        e4 = self.enc4(p3)        # shape: (B, base_channels*8, H/8, W/8)
+        p4 = F.max_pool2d(e4, 2)
+        
+        # Bottleneck
+        b = self.bottleneck(p4)   # shape: (B, base_channels*16, H/16, W/16)
+        
+        # ----- Decoder pathway with skip connections -----
+        d4 = self.up4(b)          # Upsample: (B, base_channels*8, H/8, W/8)
+        # Ensure dimensions match (pad if necessary)
+        if d4.size()[2:] != e4.size()[2:]:
+            d4 = self._pad_to_match(d4, e4)
+        d4 = torch.cat([d4, e4], dim=1)  # Concatenate along channels -> (B, base_channels*16, H/8, W/8)
+        d4 = self.dec4(d4)        # (B, base_channels*8, H/8, W/8)
+        
+        d3 = self.up3(d4)         # (B, base_channels*4, H/4, W/4)
+        if d3.size()[2:] != e3.size()[2:]:
+            d3 = self._pad_to_match(d3, e3)
+        d3 = torch.cat([d3, e3], dim=1)  # (B, base_channels*8, H/4, W/4)
+        d3 = self.dec3(d3)        # (B, base_channels*4, H/4, W/4)
+        
+        d2 = self.up2(d3)         # (B, base_channels*2, H/2, W/2)
+        if d2.size()[2:] != e2.size()[2:]:
+            d2 = self._pad_to_match(d2, e2)
+        d2 = torch.cat([d2, e2], dim=1)  # (B, base_channels*4, H/2, W/2)
+        d2 = self.dec2(d2)        # (B, base_channels*2, H/2, W/2)
+        
+        d1 = self.up1(d2)         # (B, base_channels, H, W)
+        if d1.size()[2:] != e1.size()[2:]:
+            d1 = self._pad_to_match(d1, e1)
+        d1 = torch.cat([d1, e1], dim=1)  # (B, base_channels*2, H, W)
+        d1 = self.dec1(d1)        # (B, base_channels, H, W)
+        
+        out = self.final_conv(d1) # (B, in_channels, H, W)
+        return out
+
+    def _pad_to_match(self, x, ref):
+        """
+        Pad x so that its spatial dimensions match those of ref.
+        """
+        diffY = ref.size(2) - x.size(2)
+        diffX = ref.size(3) - x.size(3)
+        return F.pad(x, [diffX // 2, diffX - diffX // 2,
+                         diffY // 2, diffY - diffY // 2])

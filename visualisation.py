@@ -129,12 +129,14 @@ def plot_denoised_data(
 
     # Also plot the tbt data for the selected device
     fig, axs = plt.subplots(1, 2, figsize=(14, 5))
+    turn_limit = 50
     axs[0].plot(denoised_x, label="Denoised X", alpha=0.8)
     axs[0].plot(noisy_x, label="Noisy X", linestyle="dotted", alpha=0.7)
     axs[0].plot(clean_x, label="Clean X", linestyle="dashed", alpha=0.7)
     axs[0].set_xlabel("Turns")
     axs[0].set_ylabel("Amplitude")
     axs[0].set_title("X Plane")
+    axs[0].set_xlim(0, turn_limit)
     axs[0].legend()
     axs[0].grid(True, linestyle="--", alpha=0.6)
 
@@ -144,6 +146,7 @@ def plot_denoised_data(
     axs[1].set_xlabel("Turns")
     axs[1].set_ylabel("Amplitude")
     axs[1].set_title("Y Plane")
+    axs[1].set_xlim(0, turn_limit)
     axs[1].legend()
     axs[1].grid(True, linestyle="--", alpha=0.6)
 
@@ -175,9 +178,9 @@ def plot_noisy_data(noisy, clean, bpm_index):
     noisy = noisy[bpm_index, :]
     clean = clean[bpm_index, :]
 
-    # Create subplots for X and Y
-    plt.plot(noisy, label="Noisy", alpha=0.8)
-    plt.plot(clean, label="Clean", linestyle="dashed", alpha=0.7)
+    # plt.plot(noisy, label="Noisy", alpha=0.8)
+    # plt.plot(clean, label="Clean", linestyle="dashed", alpha=0.7)
+    plt.plot(noisy-clean, label="Noisy - Clean")
     plt.xlabel("Turns")
     plt.ylabel("Amplitude")
     plt.title("X Plane")

@@ -25,14 +25,14 @@ def get_tbt_path(beam: int, nturns: int, index: int) -> Path:
 
 # General Settings
 BEAM = 1
-NUM_FILES = 200
-LOAD_MODEL = False
+NUM_FILES = 250
+LOAD_MODEL = True
 
 # Data Settings
 NBPMS = 563
 TOTAL_TURNS = 1500   # Total turns in the simulated data file
 NTURNS = 1000        # Training window length
-BATCH_SIZE = 20
+BATCH_SIZE = 50
 TRAIN_RATIO = 0.8
 MODEL_SAVE_PATH = "conv_autoencoder.pth"
 MODEL_DIR = get_model_dir(beam=BEAM)
@@ -41,10 +41,10 @@ NUM_PLANES = 2
 NUM_CHANNELS = NUM_PLANES
 
 # Optimisation Settings
-NUM_EPOCHS = 300
+NUM_EPOCHS = 250
 BOTTLENECK_SIZE = 32
 BASE_CHANNELS = 32
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-4
 
 ALPHA = 0.5
@@ -52,12 +52,17 @@ ALPHA = 0.5
 DENOISED_INDEX = -2
 SAMPLE_INDEX = 2
 
-NOISE_FACTOR = 1e-7
-MODEL_TYPE = "leaky"
-LOSS_TYPE = "mse"
+NOISE_FACTOR = 0
 
-# Additional weight for the frequency component
-# FFT_WEIGHT = 1e-4 # Time loss initially on order of 0.2, Freq loss on order of 11.7 -> so 11.7*1e-4 = 1.17e-3 -> around 100 times smaller
+MODEL_TYPE = "leaky"
+UNET_DEPTH = 3
+
+LOSS_TYPE = "ssp"
+SCHEDULER = True
+MIN_LR = 1e-5
+INIT = "xavier"
+DATA_SCALING = "minmax"
+USE_OFFSETS = True
 
 experiment_config = {
     "beam": BEAM,
@@ -70,16 +75,26 @@ experiment_config = {
     "num_planes": NUM_PLANES,
     "num_channels": NUM_CHANNELS,
     "num_epochs": NUM_EPOCHS,
-    "bottleneck_size": BOTTLENECK_SIZE,
     "base_channels": BASE_CHANNELS,
     "learning_rate": LEARNING_RATE,
     "weight_decay": WEIGHT_DECAY,
-    # "alpha": ALPHA,
     "noise_factor": NOISE_FACTOR,
     "model_type": MODEL_TYPE,
     "loss_type": LOSS_TYPE,
     # "fft_weight": FFT_WEIGHT,
+    "scheduler": SCHEDULER,
+    "data_scaling": DATA_SCALING,
+    "use_offsets": USE_OFFSETS,
 }
+if MODEL_TYPE != "deep":
+    experiment_config["bottleneck_size"] = BOTTLENECK_SIZE
+if MODEL_TYPE == "unet":
+    experiment_config["unet_depth"] = UNET_DEPTH
+
+if LOSS_TYPE == "fft" or LOSS_TYPE == "combined":
+    experiment_config["alpha"] = ALPHA
+if SCHEDULER:
+    experiment_config["min_lr"] = MIN_LR
 
 
 HARPY_INPUT = DotDict({

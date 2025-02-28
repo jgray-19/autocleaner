@@ -1,7 +1,10 @@
 import pytorch_lightning as pl
-import torch.optim as optim
-from losses import CombinedMSECorrelationLoss, CorrelationLoss
 import torch
+import torch.optim as optim
+
+from config import NUM_EPOCHS, SCHEDULER, ALPHA, MIN_LR
+from losses import CombinedCorrelationLoss, CorrelationLoss, fft_loss_per_bpm, SSPLoss
+
 
 class LitAutoencoder(pl.LightningModule):
     def __init__(self, model, learning_rate, weight_decay, loss_type):
@@ -14,10 +17,20 @@ class LitAutoencoder(pl.LightningModule):
         elif loss_type == "corr":
             self.loss_fn = CorrelationLoss()
         elif loss_type == "combined":
-            self.loss_fn = CombinedMSECorrelationLoss()
+            self.loss_fn = CombinedCorrelationLoss()
+        elif loss_type == "ssp":
+            self.loss_fn = SSPLoss()
+        elif loss_type == "fft":
+            self.loss_fn = self.combined_fft_loss
         else:
             raise ValueError(f"Unknown loss type: {loss_type}")
 
+    def combined_fft_loss(self, pred, target):
+        # Standard time-domain MSE
+        mse_loss = torch.mean((pred - target) ** 2)
+        # Frequency-domain loss using your FFT-based function (adjust hyperparameters if needed)
+        fft_loss = fft_loss_per_bpm(pred, target)
+        return ALPHA * mse_loss + (1 - ALPHA) * fft_loss
 
     def forward(self, x):
         return self.model(x)
@@ -27,7 +40,7 @@ class LitAutoencoder(pl.LightningModule):
         clean = batch["clean"]
         reconstructed = self(noisy)
         loss = self.loss_fn(reconstructed, clean)
-        
+
         self.log("train_loss", loss, batch_size=noisy.size(0))
         return loss
 
@@ -36,11 +49,18 @@ class LitAutoencoder(pl.LightningModule):
         clean = batch["clean"]
         reconstructed = self(noisy)
         loss = self.loss_fn(reconstructed, clean)
-        
+
         self.log("val_loss", loss, batch_size=noisy.size(0))
         return loss
 
 
     def configure_optimizers(self):
-        optimizer = optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+        optimizer = optim.AdamW(
+            self.model.parameters(),
+            lr=self.learning_rate,
+            weight_decay=self.weight_decay,
+        )
+        if SCHEDULER:
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, eta_min=MIN_LR, T_max=NUM_EPOCHS)
+            return [optimizer], [scheduler]
         return optimizer

@@ -25,12 +25,22 @@ from config import (
     save_experiment_config,
 )
 from dataloader import build_sample_dict, load_data, write_data
-from models import Conv2DAutoencoder, Conv2DAutoencoderLeaky, SineConv2DAutoencoder
+from models import (
+    Conv2DAutoencoder,
+    Conv2DAutoencoderLeaky,
+    SineConv2DAutoencoder,
+    Conv2DAutoencoderLeakyNoFC,
+    Conv2DAutoencoderLeakyFourier,
+    DeepConvAutoencoder,
+    UNetAutoencoder,
+)
 from pl_module import LitAutoencoder
 from visualisation import plot_data_distribution, plot_denoised_data, plot_noisy_data
 
 assert __name__ == "__main__", "This script is not meant to be imported."
 print_config()
+free, available = torch.cuda.mem_get_info()
+print("Current GPU use:", (available - free) / 1e9, "GB")
 
 # Set up reproducibility
 torch.manual_seed(42)
@@ -55,6 +65,16 @@ elif MODEL_TYPE == "conv":
     model = Conv2DAutoencoder()
 elif MODEL_TYPE == "leaky":
     model = Conv2DAutoencoderLeaky()
+elif MODEL_TYPE == "nofc":
+    model = Conv2DAutoencoderLeakyNoFC()
+elif MODEL_TYPE == "fourier":
+    model = Conv2DAutoencoderLeakyFourier()
+elif MODEL_TYPE == "deep":
+    model = DeepConvAutoencoder()
+elif MODEL_TYPE == "unet":
+    model = UNetAutoencoder()
+elif MODEL_TYPE == "unet_fixed":
+    model = UNetAutoencoder()
 else:
     raise ValueError(f"Unknown model type: {MODEL_TYPE}")
 
@@ -81,7 +101,7 @@ else:
     b4_train = time.time()
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS,
-        log_every_n_steps=5,
+        log_every_n_steps=4,
         default_root_dir=log_dir,  # Set the logging path
         logger=logger,
         enable_checkpointing=False,  # Disables automatic checkpoint saving
