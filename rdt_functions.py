@@ -372,27 +372,26 @@ def get_rdts_from_optics_analysis(
     rdt_paths = get_rdt_paths(rdts, output_dir)
 
     # Run the analysis if the output files do not exist
-    if any(not path.exists() for path in rdt_paths.values()):
-        hole_in_one_entrypoint(
-            files=[FREQ_OUT_DIR / tbt_path.name],
-            outputdir=output_dir,
-            optics=True,
-            accel="lhc",
-            beam=beam,
-            year="2024",
-            energy=6.8,
-            model_dir=get_model_dir(beam),
-            only_coupling=only_coupling,
-            compensation="none",
-            nonlinear=["rdt"],
-            rdt_magnet_order=rdt_order,
-        )
-        tunes = get_tunes(output_dir)
-        print(f"Tunes for beam {beam}: {tunes}")
-        # if abs(tunes[0] - 0.28) > 0.0001 or abs(tunes[1] - 0.31) > 0.0001:
-        #     raise ValueError(
-        #         "Tunes are far from the expected values, rdts will be wrong/outside the tolerance"
-        #     )
+    hole_in_one_entrypoint(
+        files=[FREQ_OUT_DIR / tbt_path.name],
+        outputdir=output_dir,
+        optics=True,
+        accel="lhc",
+        beam=beam,
+        year="2024",
+        energy=6.8,
+        model_dir=get_model_dir(beam),
+        only_coupling=only_coupling,
+        compensation="none",
+        nonlinear=["rdt"],
+        rdt_magnet_order=rdt_order,
+    )
+    tunes = get_tunes(output_dir)
+    print(f"Tunes for beam {beam}: {tunes}")
+    # if abs(tunes[0] - 0.28) > 0.0001 or abs(tunes[1] - 0.31) > 0.0001:
+    #     raise ValueError(
+    #         "Tunes are far from the expected values, rdts will be wrong/outside the tolerance"
+    #     )
     dfs = {
         rdt: filter_out_BPM_near_IPs(tfs.read(path, index="NAME")) for rdt, path in rdt_paths.items()
     }
