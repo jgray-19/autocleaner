@@ -20,6 +20,9 @@ class LitAutoencoder(pl.LightningModule):
             self.loss_fn = CombinedCorrelationLoss()
         elif loss_type == "ssp":
             self.loss_fn = SSPLoss()
+        elif loss_type == "comb_ssp":
+            self.ssp = SSPLoss()
+            self.loss_fn = self.combined_ssp_loss
         elif loss_type == "fft":
             self.loss_fn = self.combined_fft_loss
         else:
@@ -31,6 +34,11 @@ class LitAutoencoder(pl.LightningModule):
         # Frequency-domain loss using your FFT-based function (adjust hyperparameters if needed)
         fft_loss = fft_loss_per_bpm(pred, target)
         return ALPHA * mse_loss + (1 - ALPHA) * fft_loss
+
+    def combined_ssp_loss(self, pred, target):
+        ssp_loss = self.ssp(pred, target)
+        mse_loss = torch.nn.functional.mse_loss(pred, target)
+        return ssp_loss + mse_loss
 
     def forward(self, x):
         return self.model(x)

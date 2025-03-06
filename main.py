@@ -23,6 +23,7 @@ from config import (
     WEIGHT_DECAY,
     print_config,
     save_experiment_config,
+    NLOGSTEPS,
 )
 from dataloader import build_sample_dict, load_data, write_data
 from models import (
@@ -34,6 +35,7 @@ from models import (
     DeepConvAutoencoder,
     UNetAutoencoder,
 )
+from fno import FNO2d
 from pl_module import LitAutoencoder
 from visualisation import plot_data_distribution, plot_denoised_data, plot_noisy_data
 
@@ -75,6 +77,8 @@ elif MODEL_TYPE == "unet":
     model = UNetAutoencoder()
 elif MODEL_TYPE == "unet_fixed":
     model = UNetAutoencoder()
+elif MODEL_TYPE == "fno":
+    model = FNO2d()
 else:
     raise ValueError(f"Unknown model type: {MODEL_TYPE}")
 
@@ -101,7 +105,7 @@ else:
     b4_train = time.time()
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS,
-        log_every_n_steps=4,
+        log_every_n_steps=NLOGSTEPS,
         default_root_dir=log_dir,  # Set the logging path
         logger=logger,
         enable_checkpointing=False,  # Disables automatic checkpoint saving

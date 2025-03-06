@@ -2,6 +2,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
+from math import floor
 
 from generic_parser.tools import DotDict
 
@@ -25,41 +26,43 @@ def get_tbt_path(beam: int, nturns: int, index: int) -> Path:
 
 # General Settings
 BEAM = 1
-NUM_FILES = 250
-LOAD_MODEL = True
+NUM_FILES = 200
+LOAD_MODEL = False
 
 # Data Settings
 NBPMS = 563
 TOTAL_TURNS = 1500   # Total turns in the simulated data file
 NTURNS = 1000        # Training window length
-BATCH_SIZE = 50
+BATCH_SIZE = 10
 TRAIN_RATIO = 0.8
 MODEL_SAVE_PATH = "conv_autoencoder.pth"
 MODEL_DIR = get_model_dir(beam=BEAM)
+
+NLOGSTEPS = max(floor(TRAIN_RATIO * NUM_FILES / BATCH_SIZE), 1)
 
 NUM_PLANES = 2
 NUM_CHANNELS = NUM_PLANES
 
 # Optimisation Settings
-NUM_EPOCHS = 250
+NUM_EPOCHS = 1500
 BOTTLENECK_SIZE = 32
-BASE_CHANNELS = 32
+BASE_CHANNELS = 24
 LEARNING_RATE = 1e-3
-WEIGHT_DECAY = 1e-4
+WEIGHT_DECAY = 1e-5
 
 ALPHA = 0.5
 
 DENOISED_INDEX = -2
 SAMPLE_INDEX = 2
 
-NOISE_FACTOR = 0
+NOISE_FACTOR = 1e-5
 
-MODEL_TYPE = "leaky"
-UNET_DEPTH = 3
+MODEL_TYPE = "unet_fixed"
+MODEL_DEPTH = 3
 
 LOSS_TYPE = "ssp"
 SCHEDULER = True
-MIN_LR = 1e-5
+MIN_LR = 5e-5
 INIT = "xavier"
 DATA_SCALING = "minmax"
 USE_OFFSETS = True
@@ -88,8 +91,8 @@ experiment_config = {
 }
 if MODEL_TYPE != "deep":
     experiment_config["bottleneck_size"] = BOTTLENECK_SIZE
-if MODEL_TYPE == "unet":
-    experiment_config["unet_depth"] = UNET_DEPTH
+if MODEL_TYPE == "unet" or MODEL_TYPE == "fno":
+    experiment_config["depth"] = MODEL_DEPTH
 
 if LOSS_TYPE == "fft" or LOSS_TYPE == "combined":
     experiment_config["alpha"] = ALPHA

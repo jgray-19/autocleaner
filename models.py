@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from config import BASE_CHANNELS, BOTTLENECK_SIZE, NUM_PLANES, INIT, UNET_DEPTH#, NBPMS, NTURNS
+from config import BASE_CHANNELS, BOTTLENECK_SIZE, NUM_PLANES, INIT, MODEL_DEPTH#, NBPMS, NTURNS
 
 H_ENC = 141
 W_ENC = 250
@@ -533,7 +533,7 @@ class DeepConvAutoencoder(nn.Module):
         return x_out
 
 class UNetAutoencoder(nn.Module):
-    def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS, depth=UNET_DEPTH):
+    def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS, depth=MODEL_DEPTH):
         """
         A U-Net style autoencoder for oscillatory data.
         
