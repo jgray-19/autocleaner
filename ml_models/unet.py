@@ -265,45 +265,45 @@ class UNetAutoencoderFixedDepthCheckpoint(nn.Module):
     
     def forward(self, x):
         # Encoder path with checkpointing.
-        e1 = checkpoint(self.enc1, x)
+        e1 = checkpoint(self.enc1, x, use_reentrant=False)
         p1 = F.max_pool2d(e1, kernel_size=2, stride=2)
         
-        e2 = checkpoint(self.enc2, p1)
+        e2 = checkpoint(self.enc2, p1, use_reentrant=False)
         p2 = F.max_pool2d(e2, kernel_size=2, stride=2)
         
-        e3 = checkpoint(self.enc3, p2)
+        e3 = checkpoint(self.enc3, p2, use_reentrant=False)
         p3 = F.max_pool2d(e3, kernel_size=2, stride=2)
         
-        e4 = checkpoint(self.enc4, p3)
+        e4 = checkpoint(self.enc4, p3, use_reentrant=False)
         p4 = F.max_pool2d(e4, kernel_size=2, stride=2)
         
         # Bottleneck with checkpointing.
-        b = checkpoint(self.bottleneck, p4)
+        b = checkpoint(self.bottleneck, p4, use_reentrant=False)
         
         # Decoder path with checkpointing.
         d4 = self.up4(b)
         if d4.size()[2:] != e4.size()[2:]:
             d4 = self._pad_to_match(d4, e4)
         d4 = torch.cat([d4, e4], dim=1)
-        d4 = checkpoint(self.dec4, d4)
+        d4 = checkpoint(self.dec4, d4, use_reentrant=False)
         
         d3 = self.up3(d4)
         if d3.size()[2:] != e3.size()[2:]:
             d3 = self._pad_to_match(d3, e3)
         d3 = torch.cat([d3, e3], dim=1)
-        d3 = checkpoint(self.dec3, d3)
+        d3 = checkpoint(self.dec3, d3, use_reentrant=False)
         
         d2 = self.up2(d3)
         if d2.size()[2:] != e2.size()[2:]:
             d2 = self._pad_to_match(d2, e2)
         d2 = torch.cat([d2, e2], dim=1)
-        d2 = checkpoint(self.dec2, d2)
+        d2 = checkpoint(self.dec2, d2, use_reentrant=False)
         
         d1 = self.up1(d2)
         if d1.size()[2:] != e1.size()[2:]:
             d1 = self._pad_to_match(d1, e1)
         d1 = torch.cat([d1, e1], dim=1)
-        d1 = checkpoint(self.dec1, d1)
+        d1 = checkpoint(self.dec1, d1, use_reentrant=False)
         
         out = self.final_conv(d1)
         return out
