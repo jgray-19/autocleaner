@@ -1,6 +1,9 @@
 import matplotlib.pyplot as plt
+import torch
+from torchviz import make_dot
+
+from config import CONFIG_NAME, NBPMS, NTURNS, NUM_PLANES, PLOT_DIR
 from fft_processing import calculate_fft_and_amps
-from config import CONFIG_NAME, NBPMS, PLOT_DIR, NTURNS
 
 if not PLOT_DIR.exists():
     PLOT_DIR.mkdir(parents=True)
@@ -109,6 +112,8 @@ def plot_denoised_data(
     axs[0].set_title("X Plane")
     axs[0].legend()
     axs[0].grid(True, linestyle="--", alpha=0.6)
+    axs[0].ticklabel_format(axis='both', style='sci', scilimits=(0,0))
+    axs[0].yaxis.major.formatter._useMathText = True
 
     axs[1].plot(denoised_freqs_y, denoised_amps_y, label="Denoised Y", alpha=0.8)
     axs[1].plot(
@@ -122,6 +127,8 @@ def plot_denoised_data(
     axs[1].set_title("Y Plane")
     axs[1].legend()
     axs[1].grid(True, linestyle="--", alpha=0.6)
+    axs[1].ticklabel_format(axis='both', style='sci', scilimits=(0,0))
+    axs[1].yaxis.major.formatter._useMathText = True
 
     plt.tight_layout()
     plt.savefig(PLOT_DIR / (CONFIG_NAME + spectrum_id))
@@ -130,26 +137,29 @@ def plot_denoised_data(
     # Also plot the tbt data for the selected device
     fig, axs = plt.subplots(1, 2, figsize=(14, 5))
     turn_limit = 50
-    axs[0].plot(denoised_x, label="Denoised X", alpha=0.8)
-    axs[0].plot(noisy_x, label="Noisy X", linestyle="dotted", alpha=0.7)
-    axs[0].plot(clean_x, label="Clean X", linestyle="dashed", alpha=0.7)
+    axs[0].plot(clean_x, label="Clean X", alpha=0.8)
+    axs[0].plot(noisy_x, label="Noisy X", linestyle="dashed", alpha=0.7)
+    axs[0].plot(denoised_x, label="Denoised X", linestyle="dotted", alpha=0.7)
     axs[0].set_xlabel("Turns")
     axs[0].set_ylabel("Amplitude")
     axs[0].set_title("X Plane")
     axs[0].set_xlim(0, turn_limit)
     axs[0].legend()
     axs[0].grid(True, linestyle="--", alpha=0.6)
+    axs[0].ticklabel_format(axis='both', style='sci', scilimits=(0,0))
+    axs[0].yaxis.major.formatter._useMathText = True
 
-    axs[1].plot(denoised_y, label="Denoised Y", alpha=0.8)
-    axs[1].plot(noisy_y, label="Noisy Y", linestyle="dotted", alpha=0.7)
-    axs[1].plot(clean_y, label="Clean Y", linestyle="dashed", alpha=0.7)
+    axs[1].plot(clean_y, label="Clean Y", alpha=0.8)
+    axs[1].plot(noisy_y, label="Noisy Y", linestyle="dashed", alpha=0.7)
+    axs[1].plot(denoised_y, label="Denoised Y", linestyle="dotted", alpha=0.7)
     axs[1].set_xlabel("Turns")
     axs[1].set_ylabel("Amplitude")
     axs[1].set_title("Y Plane")
     axs[1].set_xlim(0, turn_limit)
     axs[1].legend()
     axs[1].grid(True, linestyle="--", alpha=0.6)
-
+    axs[1].ticklabel_format(axis='both', style='sci', scilimits=(0,0))
+    axs[1].yaxis.major.formatter._useMathText = True
     plt.tight_layout()
     plt.savefig(PLOT_DIR / (CONFIG_NAME + tbt_id))
     print(f"TBT data plot saved as {tbt_id}.")
@@ -164,6 +174,7 @@ def plot_data_distribution(data, title="Data Distribution"):
     plt.ylabel("Density")
     plt.grid(True)
     plt.show()
+
 
 def plot_noisy_data(noisy, clean, bpm_index):
     """
@@ -180,7 +191,7 @@ def plot_noisy_data(noisy, clean, bpm_index):
 
     # plt.plot(noisy, label="Noisy", alpha=0.8)
     # plt.plot(clean, label="Clean", linestyle="dashed", alpha=0.7)
-    plt.plot(noisy-clean, label="Noisy - Clean")
+    plt.plot(noisy - clean, label="Noisy - Clean")
     plt.xlabel("Turns")
     plt.ylabel("Amplitude")
     plt.title("X Plane")
@@ -188,3 +199,32 @@ def plot_noisy_data(noisy, clean, bpm_index):
     plt.grid(True, linestyle="--", alpha=0.6)
     plt.tight_layout()
     plt.show()
+
+
+def plot_model_architecture(
+    model, input_size=(NUM_PLANES, NBPMS, NTURNS), filename="model_architecture"
+):
+    """
+    Generates a .png file showing the model architecture using torchviz.
+
+    Args:
+        model: Your PyTorch model.
+        input_size (tuple): Shape of a single input sample, excluding batch size.
+        filename (str): The desired filename (without extension) for the saved plot.
+
+    Returns:
+        None (it saves a PNG file of the model graph to your working directory).
+    """
+    # Create a dummy input tensor with batch size = 1
+    dummy_input = torch.randn(1, *input_size)
+
+    # Forward pass to build the computation graph
+    output = model(dummy_input)
+
+    # Use make_dot to create the graph
+    dot_graph = make_dot(output, params=dict(model.named_parameters()))
+
+    # Save the graph to a .png file
+    dot_graph.format = "png"
+    dot_graph.render(filename, cleanup=True)
+    print(f"Model architecture diagram saved as {filename}.png")

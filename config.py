@@ -26,15 +26,20 @@ def get_tbt_path(beam: int, nturns: int, index: int) -> Path:
 
 # General Settings
 BEAM = 1
-NUM_FILES = 200
+NUM_FILES = 1000
 LOAD_MODEL = False
+RESUME_FROM_CKPT = False
+CONFIG_NAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 # Data Settings
 NBPMS = 563
 TOTAL_TURNS = 1500   # Total turns in the simulated data file
 NTURNS = 1000        # Training window length
-BATCH_SIZE = 10
+BATCH_SIZE = 15
 TRAIN_RATIO = 0.8
+NUM_SAME_NOISE = 10
+NUM_SAME_OFFSET = 1
+
 MODEL_SAVE_PATH = "conv_autoencoder.pth"
 MODEL_DIR = get_model_dir(beam=BEAM)
 
@@ -44,10 +49,10 @@ NUM_PLANES = 2
 NUM_CHANNELS = NUM_PLANES
 
 # Optimisation Settings
-NUM_EPOCHS = 1500
+NUM_EPOCHS = 300
 BOTTLENECK_SIZE = 32
-BASE_CHANNELS = 24
-LEARNING_RATE = 1e-3
+BASE_CHANNELS = 16
+LEARNING_RATE = 5e-4
 WEIGHT_DECAY = 1e-5
 
 ALPHA = 0.5
@@ -55,9 +60,10 @@ ALPHA = 0.5
 DENOISED_INDEX = -2
 SAMPLE_INDEX = 2
 
-NOISE_FACTOR = 1e-5
+NOISE_FACTOR = 1e-6
 
-MODEL_TYPE = "unet_fixed"
+# MODEL_TYPE = "unet_fixed_checkpoint"
+MODEL_TYPE = "unet_fixed_checkpoint"
 MODEL_DEPTH = 3
 
 LOSS_TYPE = "ssp"
@@ -73,6 +79,8 @@ experiment_config = {
     "load_model": LOAD_MODEL,
     "nbpms": NBPMS,
     "nturns": NTURNS,
+    "total_turns": TOTAL_TURNS,
+    "num_same_noise": NUM_SAME_NOISE,
     "batch_size": BATCH_SIZE,
     "train_ratio": TRAIN_RATIO,
     "num_planes": NUM_PLANES,
@@ -119,8 +127,6 @@ def print_config():
     for key, value in globals().items():
         if key.isupper():
             print(f"{key}: {value}")
-
-CONFIG_NAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 def save_experiment_config(output_dir, config_name= CONFIG_NAME + "_config.json"):
     os.makedirs(output_dir, exist_ok=True)

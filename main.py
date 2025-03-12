@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytorch_lightning as pl
 import torch
+# import hiddenlayer as hl
 from matplotlib import pyplot as plt
 from pytorch_lightning.loggers import TensorBoardLogger
 
@@ -24,6 +25,10 @@ from config import (
     print_config,
     save_experiment_config,
     NLOGSTEPS,
+    # NTURNS, 
+    # NBPMS, 
+    # NUM_PLANES,
+    RESUME_FROM_CKPT
 )
 from dataloader import build_sample_dict, load_data, write_data
 from ml_models.conv_2d import (
@@ -35,9 +40,18 @@ from ml_models.conv_2d import (
     DeepConvAutoencoder,
 )
 from ml_models.fno import FNO2d
-from ml_models.unet import UNetAutoencoder, UNetAutoencoderFixedDepth, UNetAutoencoderFixedDepthCheckpoint
-from pl_module import LitAutoencoder
-from visualisation import plot_data_distribution, plot_denoised_data, plot_noisy_data
+from ml_models.unet import (
+    UNetAutoencoder,
+    UNetAutoencoderFixedDepth,
+    UNetAutoencoderFixedDepthCheckpoint,
+)
+from pl_module import LitAutoencoder,find_newest_file
+from visualisation import (
+    plot_data_distribution,
+    plot_denoised_data,
+    plot_noisy_data,
+    # plot_model_architecture,
+)
 
 assert __name__ == "__main__", "This script is not meant to be imported."
 print_config()
@@ -100,22 +114,28 @@ else:
         weight_decay=WEIGHT_DECAY,
     )
 
-    log_dir = Path("/home/jovyan/")
-    logger = TensorBoardLogger(log_dir, name="tensor-logs", version=CONFIG_NAME)
-    save_experiment_config(log_dir / "tensor-logs/")
+    root_dir = Path("/home/jovyan/")
+    log_dir = root_dir / "tensor-logs/"
+    logger = TensorBoardLogger(root_dir, name=log_dir.name, version=CONFIG_NAME)
+    if not RESUME_FROM_CKPT:
+        save_experiment_config(log_dir)
 
     b4_train = time.time()
     trainer = pl.Trainer(
         max_epochs=NUM_EPOCHS,
         log_every_n_steps=NLOGSTEPS,
-        default_root_dir=log_dir,  # Set the logging path
+        default_root_dir=root_dir,  # Set the logging path
         logger=logger,
-        enable_checkpointing=False,  # Disables automatic checkpoint saving
+        max_time={"hours": 7.5}
+        # enable_checkpointing=False,  # Disables automatic checkpoint saving
     )
-    try:
-        trainer.fit(lit_model, train_loader, val_loader)
-    except KeyboardInterrupt:
-        pass
+    if RESUME_FROM_CKPT: 
+        ckpt_fldr = log_dir / CONFIG_NAME / "checkpoints"
+        ckpt_file = find_newest_file(ckpt_fldr) 
+        ckpt_path = ckpt_fldr / ckpt_file
+    else:
+        ckpt_path = None
+    trainer.fit(lit_model, train_loader, val_loader, ckpt_path=ckpt_path)
     print(f"Training took {time.time() - b4_train:.2f} seconds.")
 
     # Save the model
@@ -128,7 +148,8 @@ print("Denoising validation data...")
 b4_denoise = time.time()
 
 sample_list = []
-for batch in val_loader:
+val_indices = val_loader.dataset.indices
+for idx, batch in enumerate(val_loader):
     noisy_batch = batch["noisy"]
 
     # Process the batch through the model
@@ -143,6 +164,7 @@ for batch in val_loader:
             "denoised": denoised_batch[i],
         }
         sample_list.append(sample)
+    break
 
 # Reassemble one file (both planes) from the collected batches.
 # (Here we assume that among the batches we have at least one X and one Y sample.)

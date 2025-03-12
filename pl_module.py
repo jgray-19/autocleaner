@@ -5,6 +5,9 @@ import torch.optim as optim
 from config import NUM_EPOCHS, SCHEDULER, ALPHA, MIN_LR
 from losses import CombinedCorrelationLoss, CorrelationLoss, fft_loss_per_bpm, SSPLoss
 
+import os
+import glob
+
 
 class LitAutoencoder(pl.LightningModule):
     def __init__(self, model, learning_rate, weight_decay, loss_type):
@@ -72,3 +75,10 @@ class LitAutoencoder(pl.LightningModule):
             scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, eta_min=MIN_LR, T_max=NUM_EPOCHS)
             return [optimizer], [scheduler]
         return optimizer
+
+def find_newest_file(directory_path):
+    # Get a list of all files in the directory
+    files = glob.glob(os.path.join(directory_path, '*.ckpt'))
+    
+    # Find the newest file
+    return max(files, key=os.path.getctime)

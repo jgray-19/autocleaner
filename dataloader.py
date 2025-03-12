@@ -17,6 +17,8 @@ from config import (
     NOISE_FACTOR,
     NTURNS,
     NUM_FILES,
+    NUM_SAME_OFFSET,
+    NUM_SAME_NOISE,
     SEED,
     TOTAL_TURNS,
     TRAIN_RATIO,
@@ -89,6 +91,8 @@ class BPMSDataset(Dataset):
         # Split into X and Y channels.
         clean_data_x = raw[:NBPMS, :]  # shape: (NBPMS, TOTAL_TURNS)
         clean_data_y = raw[NBPMS:, :]  # shape: (NBPMS, TOTAL_TURNS)
+        if NUM_SAME_NOISE > 1 and NUM_SAME_OFFSET > 1:
+            raise ValueError("Not sure why you're doing this.")
 
         if DATA_SCALING == "qt":
             # Initialize a QuantileTransformer for each channel.
@@ -140,10 +144,14 @@ class BPMSDataset(Dataset):
         self.offsets = []
         rng = np.random.default_rng(base_seed)
 
-        for _ in range(num_files):
+        # If not using offsets always set to 0
+        if not USE_OFFSETS:
+            offset = 0
+        for i in range(num_files):
             # Generate noise for each channel.
-            noise_x = rng.normal(loc=0.0, scale=noise_factor, size=clean_data_x.shape)
-            noise_y = rng.normal(loc=0.0, scale=noise_factor, size=clean_data_y.shape)
+            if i % NUM_SAME_NOISE == 0: 
+                noise_x = rng.normal(loc=0.0, scale=noise_factor, size=clean_data_x.shape)
+                noise_y = rng.normal(loc=0.0, scale=noise_factor, size=clean_data_y.shape)
 
             # Create noisy data by adding noise.
             noisy_x = clean_data_x + noise_x
@@ -179,11 +187,11 @@ class BPMSDataset(Dataset):
             )
             self.noisy_norm.append(sample)
 
-            # Store the offset for this sample
-            if USE_OFFSETS:
+            # Update the offset every NUM_SAME_OFFSET
+            if USE_OFFSETS and i % NUM_SAME_OFFSET == 0:
                 offset = rng.integers(0, TOTAL_TURNS - NTURNS + 1)
-            else:
-                offset = 0
+
+            # Store the offset
             self.offsets.append(offset)
 
         self.num_files = num_files
@@ -261,16 +269,16 @@ def load_data() -> Union[DataLoader, DataLoader, BPMSDataset]:
         train_dataset,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=8,
-        # pin_memory=False,
+        num_workers=4,
+        pin_memory=False,
         # persistent_workers=True,  # Reuse dataloader workers
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=BATCH_SIZE,
         shuffle=False,
-        num_workers=8,
-        # pin_memory=True,
+        num_workers=4,
+        pin_memory=True,
     )
     return train_loader, val_loader, dataset
 
