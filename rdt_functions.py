@@ -293,7 +293,7 @@ def run_harpy(beam: int, tbt_file: Path, clean=False) -> None:
         file.unlink() # Clean up these really annoying files
 
 
-def run_tracking(beam: int, nturns: int, kick_amp: float = 1e-3) -> tfs.TfsDataFrame:
+def run_tracking(beam: int, nturns: int, kick_amp: float = 1e-2) -> tfs.TfsDataFrame:
     with MAD() as mad:
         initialise_model(mad, beam)
         observe_BPMs(mad, beam)

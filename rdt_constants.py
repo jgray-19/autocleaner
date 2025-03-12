@@ -31,3 +31,18 @@ SKEW_SEXTUPOLE_RDTS: tuple[str] = (
     "f0210_y",
     "f2010_y",
 )
+
+NORMAL_OCTUPOLE_RDTS: tuple[str] = (
+    "f1300_x",
+    "f4000_x",
+    "f0013_y",
+    "f0040_y",
+    "f1102_x",
+    "f1120_x",
+    "f2002_x",
+    "f2020_x",
+    "f0211_y",
+    "f0220_y",
+    "f2011_y",
+    "f2020_y",
+)
