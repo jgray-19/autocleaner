@@ -209,6 +209,9 @@ class BPMSDataset(Dataset):
 
         return {"noisy": noisy_sample, "clean": clean_sample}
 
+    def get_full_noisy(self, idx):
+        return self.noisy_norm[idx]
+
     def denormalise(self, normalized_output: torch.Tensor) -> torch.Tensor:
         """
         Inverse transforms a normalized output (of shape (2, NBPMS, NTURNS))
@@ -293,23 +296,17 @@ def build_sample_dict(sample_list: list, dataset: BPMSDataset) -> dict:
 
     # 'noisy' is of shape (2, NBPMS, NTURNS) where index 0 is X and index 1 is Y
     denorm_sample = dataset.denormalise(sample["noisy"])
+    denorm_full_sample = dataset.denormalise(sample["noisy_full"])
     denorm_clean = dataset.denormalise(sample["clean"])
     denorm_denoised = dataset.denormalise(sample["denoised"])
 
-    # You can access channels directly:
-    x_noisy = denorm_sample[0]  # shape: (NBPMS, NTURNS)
-    x_clean = denorm_clean[0]  # shape: (NBPMS, NTURNS)
-    x_denoised = denorm_denoised[0]  # shape: (NBPMS, NTURNS)
-
-    y_noisy = denorm_sample[1]  # shape: (NBPMS, NTURNS)
-    y_clean = denorm_clean[1]  # shape: (NBPMS, NTURNS)
-    y_denoised = denorm_denoised[1]  # shape: (NBPMS, NTURNS)
-
     return {
-        "x": x_noisy,
-        "y": y_noisy,
-        "x_clean": x_clean,
-        "y_clean": y_clean,
-        "x_denoised": x_denoised,
-        "y_denoised": y_denoised,
+        "x_noisy": denorm_sample[0],
+        "y_noisy": denorm_sample[1],
+        "x_full": denorm_full_sample[0],
+        "y_full": denorm_full_sample[1],
+        "x_clean": denorm_clean[0],
+        "y_clean": denorm_clean[1],
+        "x_denoised": denorm_denoised[0],
+        "y_denoised": denorm_denoised[1],
     }

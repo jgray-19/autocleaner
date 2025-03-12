@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytorch_lightning as pl
 import torch
+
 # import hiddenlayer as hl
 from matplotlib import pyplot as plt
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -25,10 +26,10 @@ from config import (
     print_config,
     save_experiment_config,
     NLOGSTEPS,
-    # NTURNS, 
-    # NBPMS, 
+    # NTURNS,
+    # NBPMS,
     # NUM_PLANES,
-    RESUME_FROM_CKPT
+    RESUME_FROM_CKPT,
 )
 from dataloader import build_sample_dict, load_data, write_data
 from ml_models.conv_2d import (
@@ -45,7 +46,7 @@ from ml_models.unet import (
     UNetAutoencoderFixedDepth,
     UNetAutoencoderFixedDepthCheckpoint,
 )
-from pl_module import LitAutoencoder,find_newest_file
+from pl_module import LitAutoencoder, find_newest_file
 from visualisation import (
     plot_data_distribution,
     plot_denoised_data,
@@ -126,12 +127,12 @@ else:
         log_every_n_steps=NLOGSTEPS,
         default_root_dir=root_dir,  # Set the logging path
         logger=logger,
-        max_time={"hours": 7.5}
+        max_time={"hours": 7.5},
         # enable_checkpointing=False,  # Disables automatic checkpoint saving
     )
-    if RESUME_FROM_CKPT: 
+    if RESUME_FROM_CKPT:
         ckpt_fldr = log_dir / CONFIG_NAME / "checkpoints"
-        ckpt_file = find_newest_file(ckpt_fldr) 
+        ckpt_file = find_newest_file(ckpt_fldr)
         ckpt_path = ckpt_fldr / ckpt_file
     else:
         ckpt_path = None
@@ -149,7 +150,7 @@ b4_denoise = time.time()
 
 sample_list = []
 val_indices = val_loader.dataset.indices
-for idx, batch in enumerate(val_loader):
+for val_idx, batch in enumerate(val_loader):
     noisy_batch = batch["noisy"]
 
     # Process the batch through the model
@@ -157,9 +158,12 @@ for idx, batch in enumerate(val_loader):
         denoised_batch = model(noisy_batch)
 
     # Add the model output to the batch dictionary.
+    full_noisy = dataset.get_full_noisy(val_indices[val_idx])
+    assert denoised_batch.size(0) == noisy_batch.size(0)  # Just checking
     for i in range(denoised_batch.size(0)):
         sample = {
             "noisy": noisy_batch[i],
+            "noisy_full": full_noisy[i],
             "clean": batch["clean"][i],
             "denoised": denoised_batch[i],
         }
@@ -169,7 +173,12 @@ for idx, batch in enumerate(val_loader):
 # Reassemble one file (both planes) from the collected batches.
 # (Here we assume that among the batches we have at least one X and one Y sample.)
 sample_dict = build_sample_dict(sample_list, dataset)
-selected_noisy_sample = torch.stack([sample_dict["x"], sample_dict["y"]], dim=0)
+selected_noisy_sample = torch.stack(
+    [sample_dict["x_noisy"], sample_dict["y_noisy"]], dim=0
+)
+selected_noisy_full_sample = torch.stack(
+    [sample_dict["x_full"], sample_dict["y_full"]], dim=0
+)
 selected_clean_sample = torch.stack(
     [sample_dict["x_clean"], sample_dict["y_clean"]], dim=0
 )
@@ -192,7 +201,8 @@ plot_denoised_data(
 
 # Write out the denoised data
 denoised_path, denoised_sdds = write_data(select_denoised_sample, DENOISED_INDEX)
-noisy_path, noisy_sdds = write_data(selected_noisy_sample, SAMPLE_INDEX)
+noisy_path, noisy_sdds = write_data(selected_noisy_full_sample, SAMPLE_INDEX)
+noisy_path, noisy_sdds = write_data(selected_noisy_sample, SAMPLE_INDEX + "_split")
 print(f"Denoised data written to {denoised_path}")
 print(f"Noisy data written to {noisy_path}")
 
