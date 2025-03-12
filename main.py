@@ -158,14 +158,15 @@ for val_idx, batch in enumerate(val_loader):
         denoised_batch = model(noisy_batch)
 
     # Add the model output to the batch dictionary.
-    full_noisy = dataset.get_full_noisy(val_indices[val_idx])
     assert denoised_batch.size(0) == noisy_batch.size(0)  # Just checking
-    for i in range(denoised_batch.size(0)):
+    for batch_idx in range(denoised_batch.size(0)):
+        dataset_idx = val_indices[val_idx * val_loader.batch_size + batch_idx]
+        full_noisy = dataset.get_full_noisy(dataset_idx)
         sample = {
-            "noisy": noisy_batch[i],
-            "noisy_full": full_noisy[i],
-            "clean": batch["clean"][i],
-            "denoised": denoised_batch[i],
+            "noisy": noisy_batch[batch_idx],
+            "noisy_full": full_noisy[batch_idx],
+            "clean": batch["clean"][batch_idx],
+            "denoised": denoised_batch[batch_idx],
         }
         sample_list.append(sample)
     break
