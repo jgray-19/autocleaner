@@ -293,7 +293,7 @@ def run_harpy(beam: int, tbt_file: Path, clean=False) -> None:
         file.unlink() # Clean up these really annoying files
 
 
-def run_tracking(beam: int, nturns: int, kick_amp: float = 1e-2) -> tfs.TfsDataFrame:
+def run_tracking(beam: int, nturns: int, kick_amp: float = 1e-3) -> tfs.TfsDataFrame:
     with MAD() as mad:
         initialise_model(mad, beam)
         observe_BPMs(mad, beam)
@@ -304,7 +304,7 @@ local t0 = os.clock()
 local kick_amp = py:recv()
 local sqrt_betx = math.sqrt(115.9267454)
 local sqrt_bety = math.sqrt(50.09893796)
-local X0 = {{x=kick_amp / sqrt_betx, y=-kick_amp/sqrt_bety, px=0, py=0, t=0, pt=0}}
+local X0 = {{x=kick_amp*sqrt_betx, y=-kick_amp*sqrt_bety, px=0, py=0, t=0, pt=0}}
 print("Running MAD-NG track with kick amplitude in x: ", X0.x, " and y: ", X0.y)
 mtbl = track {{sequence=MADX.lhcb{beam}, nturn={nturns}, X0=X0}}
 print("NG Runtime: ", os.clock() - t0)

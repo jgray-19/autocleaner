@@ -18,7 +18,7 @@ BEAM = 1
 create_model = False
 do_track = True
 
-nturns = 1500
+nturns = 1000
 random.seed(42)
 
 # Create the MAD-X model
@@ -33,7 +33,7 @@ tbt_file = get_tbt_path(beam=BEAM, nturns=nturns, index=-1)
 
 # Run the tracking
 print("Running MAD-NG Tracking")
-tfs_data = run_tracking(BEAM, nturns)
+tfs_data = run_tracking(BEAM, nturns, kick_amp=1e-4)
 
 # Save the TFS data
 print("Saving TFS data")
