@@ -1,10 +1,12 @@
-import torch
-import numpy as np
 from pathlib import Path
+
+import numpy as np
 import tfs
+import torch
 from turn_by_turn.lhc import read_tbt
+
+from config import BEAM, DENOISED_INDEX, NBPMS, NTURNS, get_model_dir
 from dataloader import load_clean_data, write_data
-from config import BEAM, NTURNS, NBPMS, get_model_dir, DENOISED_INDEX, TOTAL_TURNS
 from ml_models.unet import UNetAutoencoderFixedDepthCheckpoint
 
 
