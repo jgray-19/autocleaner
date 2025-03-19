@@ -2,6 +2,7 @@ from typing import Union
 
 import numpy as np
 import pandas as pd
+from pathlib import Path
 import tfs
 import torch
 from sklearn.preprocessing import QuantileTransformer
@@ -28,7 +29,7 @@ from config import (
 )
 
 
-def load_clean_data() -> torch.Tensor:
+def load_clean_data() -> tuple[torch.Tensor, torch.Tensor]:
     # Load zero-noise data
     sdds_data_path = get_tbt_path(beam=BEAM, nturns=TOTAL_TURNS, index=-1)
     sdds_data = read_tbt(sdds_data_path)
@@ -39,18 +40,18 @@ def load_clean_data() -> torch.Tensor:
     sqrt_betay = np.sqrt(model_dat["BETY"].values)  # For Y plane
 
     # Extract data; assume sdds_data.matrices[0] contains both 'X' and 'Y'
-    x_data = sdds_data.matrices[0].X.to_numpy().T / sqrt_betax[None, :]
-    y_data = sdds_data.matrices[0].Y.to_numpy().T / sqrt_betay[None, :]
+    x_data = sdds_data.matrices[0].X.to_numpy() / sqrt_betax[:, None]
+    y_data = sdds_data.matrices[0].Y.to_numpy() / sqrt_betay[:, None]
 
-    assert x_data.shape == y_data.shape == (TOTAL_TURNS, NBPMS), "Data shape mismatch"
+    assert x_data.shape == y_data.shape == (NBPMS, TOTAL_TURNS), "Data shape mismatch"
 
-    # Concatenate along axis=1 so that each sample becomes (NTURNS, 2*NBPMS)
-    xy_data = np.concatenate([x_data, y_data], axis=1)
+    # Return x_data and y_data as separate tensors
+    return torch.tensor(x_data, dtype=torch.float32), torch.tensor(
+        y_data, dtype=torch.float32
+    )
 
-    return torch.tensor(xy_data, dtype=torch.float32)
 
-
-def write_data(data: torch.Tensor, noise_index: int = 2) -> np.ndarray:
+def write_data(data: torch.Tensor, noise_index: int = 2) -> tuple[Path, TbtData]:
     model_dat = tfs.read(get_model_dir(beam=BEAM) / "twiss.dat", index="NAME")
     sqrt_betax = np.sqrt(model_dat["BETX"].values)
     sqrt_betay = np.sqrt(model_dat["BETY"].values)
@@ -63,7 +64,7 @@ def write_data(data: torch.Tensor, noise_index: int = 2) -> np.ndarray:
     x_data = data[0, :, :] * sqrt_betax[:, None]
     y_data = data[1, :, :] * sqrt_betay[:, None]
 
-    num_planes, nbpms, nturns = data.shape
+    _, _, nturns = data.shape
     out_path = get_tbt_path(beam=BEAM, nturns=nturns, index=noise_index)
 
     matrices = [
@@ -87,15 +88,11 @@ class BPMSDataset(Dataset):
     def __init__(self, num_files, noise_factors=NOISE_FACTORS, base_seed=SEED):
         super().__init__()
         # Load clean data.
-        # load_clean_data() returns a tensor of shape (TOTAL_TURNS, 2*NBPMS)
-        # We transpose to get shape (2*NBPMS, TOTAL_TURNS)
-        raw = load_clean_data().T  # shape: (2*NBPMS, TOTAL_TURNS)
-        # Split into X and Y channels.
-        clean_data_x = raw[:NBPMS, :]  # shape: (NBPMS, TOTAL_TURNS)
-        clean_data_y = raw[NBPMS:, :]  # shape: (NBPMS, TOTAL_TURNS)
+        clean_data_x, clean_data_y = load_clean_data()  # shape: (NBPMS, TOTAL_TURNS)
         if NUM_SAME_NOISE > 1 and NUM_SAME_OFFSET > 1:
             raise ValueError("Not sure why you're doing this.")
 
+        # To normalise the noise, so that it is uniform in real space, we need to know the beta functions.
         model_dat = tfs.read(get_model_dir(beam=BEAM) / "twiss.dat", index="NAME")
         sqrt_betax = np.sqrt(model_dat["BETX"].values)
         sqrt_betay = np.sqrt(model_dat["BETY"].values)
