@@ -45,8 +45,9 @@ def denoise_tbt(autoencoder_path: str, noisy_tbt_path: str) -> Path:
     # --- Normalize noisy data using minmax scaling from the clean file ---
     norm_x = 2 * (x_data - min_x) / (max_x - min_x) - 1
     norm_y = 2 * (y_data - min_y) / (max_y - min_y) - 1
-    # Stack into a tensor of shape (2, NBPMS, NTURNS)
+    # Stack into a tensor of shape (2, NBPMS, NTURNS), then add the batch dimension
     noisy_norm = torch.tensor(np.stack([norm_x, norm_y], axis=0), dtype=torch.float32)
+    noisy_norm = noisy_norm.unsqueeze(0)
 
     # --- Load the autoencoder model ---
     model = UNetAutoencoderFixedDepthCheckpoint()
@@ -59,6 +60,10 @@ def denoise_tbt(autoencoder_path: str, noisy_tbt_path: str) -> Path:
     with torch.no_grad():
         # If your model uses a residual connection, adjust accordingly.
         denoised_norm = model(noisy_norm)
+    
+    # -- Remove the batch dimension --
+    denoised_norm = denoised_norm.squeeze(0)
+
 
     # --- Inverse minmax scaling ---
     denoised_norm_np = denoised_norm.detach().cpu().numpy()  # shape (2, NBPMS, NTURNS)

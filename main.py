@@ -196,10 +196,10 @@ plot_denoised_data(
 )
 
 # Write out the denoised data
-denoised_path, denoised_sdds = write_data(select_denoised_sample, DENOISED_INDEX)
-noisy_path, noisy_sdds = write_data(selected_noisy_full_sample, SAMPLE_INDEX)
-noisy_path, noisy_sdds = write_data(selected_noisy_sample, SAMPLE_INDEX + "_split")
-print(f"Denoised data written to {denoised_path}")
-print(f"Noisy data written to {noisy_path}")
+# denoised_path, denoised_sdds = write_data(select_denoised_sample, DENOISED_INDEX)
+# noisy_path, noisy_sdds = write_data(selected_noisy_full_sample, SAMPLE_INDEX)
+# noisy_path, noisy_sdds = write_data(selected_noisy_sample, SAMPLE_INDEX + "_split")
+# print(f"Denoised data written to {denoised_path}")
+# print(f"Noisy data written to {noisy_path}")
 
 plt.show()

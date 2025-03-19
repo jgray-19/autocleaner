@@ -14,7 +14,7 @@ from rdt_constants import (
     CURRENT_DIR,
     ACC_MODELS,
     NORMAL_SEXTUPOLE_RDTS,
-    SKEW_SEXTUPOLE_RDTS,
+    # SKEW_SEXTUPOLE_RDTS,
 )
 ANALYSIS_DIR.mkdir(exist_ok=True)
 DATA_DIR.mkdir(exist_ok=True)
@@ -42,7 +42,7 @@ def get_tfs_path(beam: int, nturns: int) -> Path:
 
 def get_tbt_path(beam: int, nturns: int, index: int) -> Path:
     """Return the name of the TBT file for the given test parameters."""
-    suffix = get_file_suffix(beam, nturns) + (f"_{index}" if index != -1 else "_zero_noise")
+    suffix = get_file_suffix(beam, nturns) + f"_{index}"
     return DATA_DIR / f"tbt_{suffix}.sdds"
 
 
@@ -276,7 +276,7 @@ py:send("match complete")
 """)
     assert mad.receive() == "match complete", "Error in matching tunes"
 
-def run_harpy(beam: int, tbt_file: Path, clean=False) -> None:
+def run_harpy(beam: int, tbt_file: Path, clean=False, turn_bits=16) -> None:
     """Run Harpy for the given test parameters."""
     hole_in_one_entrypoint(
         harpy=True,
@@ -286,7 +286,7 @@ def run_harpy(beam: int, tbt_file: Path, clean=False) -> None:
         opposite_direction=beam == 2,
         tunes=[0.28, 0.31, 0.0],
         natdeltas=[0.0, -0.0, 0.0],
-        turn_bits=18,
+        turn_bits=turn_bits,
         clean=clean,
     )
     for file in FREQ_OUT_DIR.glob("*.ini"):
@@ -316,7 +316,7 @@ print("NG Runtime: ", os.clock() - t0)
 
 def get_rdt_names() -> tuple[str]:
     """Return the all the RDTs."""
-    return NORMAL_SEXTUPOLE_RDTS + SKEW_SEXTUPOLE_RDTS
+    return NORMAL_SEXTUPOLE_RDTS #+ SKEW_SEXTUPOLE_RDTS
 
 def get_output_dir(tbt_name: str, output_dir: Path = None) -> Path:
     """Return the output directory for the given TBT, and create it if it does not exist."""

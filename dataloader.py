@@ -52,6 +52,8 @@ def load_clean_data() -> tuple[torch.Tensor, torch.Tensor]:
 
 
 def write_data(data: torch.Tensor, noise_index: int = 2) -> tuple[Path, TbtData]:
+    data = data.detach().cpu().numpy()
+
     model_dat = tfs.read(get_model_dir(beam=BEAM) / "twiss.dat", index="NAME")
     sqrt_betax = np.sqrt(model_dat["BETX"].values)
     sqrt_betay = np.sqrt(model_dat["BETY"].values)
@@ -175,6 +177,7 @@ class BPMSDataset(Dataset):
                     * rng.standard_normal(clean_data_y.shape)
                     / sqrt_betay[:, None]
                 )
+            # print("Avg noise", noise_x.flatten().mean(), noise_y.flatten().mean())
 
             # Create noisy data by adding noise.
             noisy_x = clean_data_x + noise_x

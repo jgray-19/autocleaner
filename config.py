@@ -34,7 +34,7 @@ def get_tbt_path(beam: int, nturns: int, index: int) -> Path:
 BEAM = 1
 NUM_FILES = 2000
 LOAD_MODEL = False
-RESUME_FROM_CKPT = True
+RESUME_FROM_CKPT = False
 if RESUME_FROM_CKPT:
     # CONFIG_NAME = "2025-03-12_10-35-48" # First Long training with ideal
     # CONFIG_NAME = "2025-03-13_09-39-18" # Added mse to the loss (comb_ssp instead of ssp)
@@ -43,7 +43,8 @@ if RESUME_FROM_CKPT:
     # CONFIG_NAME = "2025-03-13_18-21-08" # back to 2 but more files, more base channels, more files, smaller batches
     # CONFIG_NAME = "2025-03-17_09-47-23" # Fixed noise level, noise with beta functions 10 um.
     # CONFIG_NAME = "2025-03-17_16-31-06"  # Above but 100 um
-    CONFIG_NAME = "2025-03-18_17-07-40" # Abov but now doing many noises on updated thing
+    CONFIG_NAME = "2025-03-18_17-07-40" # Above but now doing many noises on updated thing
+    # CONFIG_NAME = "2025-03-19_17-07-40" # Above but half the initial learning rate.
 else:
     CONFIG_NAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
@@ -65,19 +66,20 @@ NUM_PLANES = 2
 NUM_CHANNELS = NUM_PLANES
 
 # Optimisation Settings
-NUM_EPOCHS = 71
+NUM_EPOCHS = 100
 BOTTLENECK_SIZE = 16
 BASE_CHANNELS = 24
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 5e-4
 WEIGHT_DECAY = 1e-5
 
 ALPHA = 0.5
 
 DENOISED_INDEX = "denoised"
 SAMPLE_INDEX = "noisy"
+NONOISE_INDEX = "zero_noise"
 
-NOISE_FACTORS = [1e-3, 9e-4, 8e-4, 7e-4, 6e-4, 5e-4, 4e-4, 3e-4, 2e-4, 1e-4, 5e-5]
-# NOISE_FACTORS = [1e-3, 5e-4, 1e-4, 5e-5]
+# NOISE_FACTORS = [1e-3, 9e-4, 8e-4, 7e-4, 6e-4, 5e-4, 4e-4, 3e-4, 2e-4, 1e-4, 5e-5]
+NOISE_FACTORS = [1e-3, 5e-4, 1e-4, 5e-5]
 
 # MODEL_TYPE = "leaky"
 MODEL_TYPE = "unet_fixed_checkpoint"

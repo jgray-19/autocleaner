@@ -1,10 +1,12 @@
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
+import numpy as np
 import torch
+import turn_by_turn as tbt
 from torchviz import make_dot
 
 from config import CONFIG_NAME, NBPMS, NTURNS, NUM_PLANES, PLOT_DIR
 from fft_processing import calculate_fft_and_amps
+
 COLOURS = [
     "#0072B2",  # Blue
     "#D55E00",  # Red
@@ -83,6 +85,7 @@ def plot_denoised_data(
     bpm_index,
     spectrum_id="denoised_spectrum_xy.png",
     tbt_id="tbt_data.png",
+    tbt_diff_id = "tbt_diff.png"
 ):
     """
     Plots FFT spectra and turn-by-turn data for both X and Y data at a given BPM index.
@@ -161,9 +164,9 @@ def plot_denoised_data(
     plt.tight_layout()
     plt.savefig(PLOT_DIR / (CONFIG_NAME + tbt_id), bbox_inches="tight", dpi=300)
     print(f"TBT data plot saved as {tbt_id}.")
-    plot_tbt_difference(noisy, denoised, nonoise, bpm_index)
+    plot_tbt_difference(noisy, denoised, nonoise, bpm_index, tbt_diff_id)
 
-def plot_tbt_difference(noisy, denoised, nonoise, bpm_index, filename="tbt_diff.png"):
+def plot_tbt_difference(noisy, denoised, nonoise, bpm_index, filename):
     """
     Plots the turn-by-turn (TBT) differences for both X and Y planes.
 
@@ -289,3 +292,54 @@ def plot_model_architecture(
     dot_graph.format = "png"
     dot_graph.render(filename, cleanup=True)
     print(f"Model architecture diagram saved as {filename}.png")
+
+def load_tbt_tensor(tbt_file_path):
+    """
+    Given a path to a TBT file, load the TBT data and return a torch.Tensor
+    of shape (2, NBPMS, NTURNS) with the data β-scaled.
+    
+    Args:
+        tbt_file_path (str or Path): Path to the TBT file.
+    
+    Returns:
+        torch.Tensor: Tensor containing the X and Y data.
+    """
+    # Read the TBT file
+    tbt_data = tbt.read_tbt(tbt_file_path)
+    
+    # Extract the X and Y data; assume tbt_data.matrices[0] contains the data in a shape (TURNS, NBPMS)
+    # Here we transpose to (NBPMS, TURNS)
+    x_data = tbt_data.matrices[0].X.to_numpy()
+    y_data = tbt_data.matrices[0].Y.to_numpy()
+    
+    # Stack the two channels to create a tensor of shape (2, NBPMS, NTURNS)
+    data_tensor = torch.tensor(np.stack([x_data, y_data], axis=0), dtype=torch.float32)
+    print(data_tensor.shape)
+    return data_tensor
+
+def plot_denoised_data_from_files(denoised_path, noisy_path, nonoise_path, bpm_index,
+                                  spectrum_id="denoised_spectrum_xy_from_tbt.png",
+                                  tbt_id="tbt_data_from_tbt.png",
+                                  tbt_diff_id="tbt_diff_from_tbt.png"
+                                  ):
+    """
+    Loads TBT data from the provided file paths and plots FFT spectra and
+    turn-by-turn data for both X and Y data at a given BPM index.
+    
+    This function behaves like the in-memory version but accepts file paths.
+    
+    Args:
+        denoised_path (str or Path): Path to the denoised (autoencoder cleaned) TBT file.
+        noisy_path (str or Path): Path to the noisy TBT file.
+        nonoise_path (str or Path): Path to the no-noise TBT file.
+        bpm_index (int): BPM index (0 to NBPMS-1) for the X plane. The corresponding Y data is at bpm_index + NBPMS.
+        spectrum_id (str): Filename to save the FFT spectrum plot.
+        tbt_id (str): Filename to save the turn-by-turn data plot.
+    """
+    # Load the TBT data from disk
+    denoised = load_tbt_tensor(denoised_path)
+    noisy = load_tbt_tensor(noisy_path)
+    nonoise = load_tbt_tensor(nonoise_path)
+    
+    # Call the original in-memory plotting function
+    plot_denoised_data(denoised, noisy, nonoise, bpm_index, spectrum_id, tbt_id, tbt_diff_id)
