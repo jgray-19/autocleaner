@@ -30,6 +30,7 @@ from config import (
     # NBPMS,
     # NUM_PLANES,
     RESUME_FROM_CKPT,
+    RESIDUALS,
 )
 from dataloader import build_sample_dict, load_data, write_data
 from ml_models.conv_2d import (
@@ -127,7 +128,7 @@ else:
         log_every_n_steps=NLOGSTEPS,
         default_root_dir=root_dir,  # Set the logging path
         logger=logger,
-        max_time={"hours": 7.5},
+        # max_time={"hours": 7.5},
         # enable_checkpointing=False,  # Disables automatic checkpoint saving
     )
     if RESUME_FROM_CKPT:
@@ -155,7 +156,10 @@ for val_idx, batch in enumerate(val_loader):
 
     # Process the batch through the model
     with torch.no_grad():
-        denoised_batch = model(noisy_batch)
+        if RESIDUALS: 
+            denoised_batch = model(noisy_batch) - noisy_batch
+        else:
+            denoised_batch = model(noisy_batch)
 
     # Add the model output to the batch dictionary.
     assert denoised_batch.size(0) == noisy_batch.size(0)  # Just checking
@@ -164,28 +168,19 @@ for val_idx, batch in enumerate(val_loader):
         full_noisy = dataset.get_full_noisy(dataset_idx)
         sample = {
             "noisy": noisy_batch[batch_idx],
-            "noisy_full": full_noisy[batch_idx],
+            "noisy_full": full_noisy,
             "clean": batch["clean"][batch_idx],
             "denoised": denoised_batch[batch_idx],
         }
         sample_list.append(sample)
     break
 
-# Reassemble one file (both planes) from the collected batches.
-# (Here we assume that among the batches we have at least one X and one Y sample.)
-sample_dict = build_sample_dict(sample_list, dataset)
-selected_noisy_sample = torch.stack(
-    [sample_dict["x_noisy"], sample_dict["y_noisy"]], dim=0
-)
-selected_noisy_full_sample = torch.stack(
-    [sample_dict["x_full"], sample_dict["y_full"]], dim=0
-)
-selected_clean_sample = torch.stack(
-    [sample_dict["x_clean"], sample_dict["y_clean"]], dim=0
-)
-select_denoised_sample = torch.stack(
-    [sample_dict["x_denoised"], sample_dict["y_denoised"]], dim=0
-)
+(
+    selected_noisy_sample,
+    selected_noisy_full_sample,
+    selected_clean_sample,
+    select_denoised_sample,
+) = build_sample_dict(sample_list, dataset)
 
 print(f"Denoising took {time.time() - b4_denoise:.2f} seconds.")
 

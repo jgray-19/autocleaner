@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 import torch
 import torch.optim as optim
 
-from config import NUM_EPOCHS, SCHEDULER, ALPHA, MIN_LR
+from config import NUM_EPOCHS, SCHEDULER, ALPHA, MIN_LR, RESIDUALS
 from losses import CombinedCorrelationLoss, CorrelationLoss, fft_loss_per_bpm, SSPLoss
 
 import os
@@ -50,7 +50,10 @@ class LitAutoencoder(pl.LightningModule):
         noisy = batch["noisy"]
         clean = batch["clean"]
         reconstructed = self(noisy)
-        loss = self.loss_fn(reconstructed, clean)
+        if RESIDUALS:
+            loss = self.loss_fn(noisy-reconstructed, clean)
+        else:
+            loss = self.loss_fn(reconstructed, clean)
 
         self.log("train_loss", loss, batch_size=noisy.size(0))
         return loss
@@ -59,7 +62,11 @@ class LitAutoencoder(pl.LightningModule):
         noisy = batch["noisy"]
         clean = batch["clean"]
         reconstructed = self(noisy)
-        loss = self.loss_fn(reconstructed, clean)
+        if RESIDUALS:
+            loss = self.loss_fn(noisy-reconstructed, clean)
+        else:
+            loss = self.loss_fn(reconstructed, clean)
+
 
         self.log("val_loss", loss, batch_size=noisy.size(0))
         return loss

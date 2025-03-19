@@ -14,7 +14,7 @@ from config import (
     BEAM,
     DATA_SCALING,
     NBPMS,
-    NOISE_FACTOR,
+    NOISE_FACTORS,
     NTURNS,
     NUM_FILES,
     NUM_SAME_OFFSET,
@@ -57,12 +57,14 @@ def write_data(data: torch.Tensor, noise_index: int = 2) -> np.ndarray:
     x_bpm_names = model_dat.index.to_list()
     y_bpm_names = model_dat.index.to_list()
 
-    assert data.shape == (2, NBPMS, NTURNS), "Data shape mismatch"
+    # assert data.shape == (2, NBPMS, NTURNS), "Data shape mismatch"
+    print("Writing datashape with:", data.shape)
 
     x_data = data[0, :, :] * sqrt_betax[:, None]
     y_data = data[1, :, :] * sqrt_betay[:, None]
 
-    out_path = get_tbt_path(beam=BEAM, nturns=NTURNS, index=noise_index)
+    num_planes, nbpms, nturns = data.shape
+    out_path = get_tbt_path(beam=BEAM, nturns=nturns, index=noise_index)
 
     matrices = [
         TransverseData(
@@ -70,7 +72,7 @@ def write_data(data: torch.Tensor, noise_index: int = 2) -> np.ndarray:
             Y=pd.DataFrame(index=y_bpm_names, data=y_data, dtype=float),
         )
     ]
-    out_data = TbtData(matrices=matrices, nturns=NTURNS)
+    out_data = TbtData(matrices=matrices, nturns=nturns)
     write_tbt(out_path, out_data)
     return out_path, out_data
 
@@ -82,7 +84,7 @@ class BPMSDataset(Dataset):
     computed over the entire 2D image (flattened) rather than per BPM.
     """
 
-    def __init__(self, num_files, noise_factor=NOISE_FACTOR, base_seed=SEED):
+    def __init__(self, num_files, noise_factors=NOISE_FACTORS, base_seed=SEED):
         super().__init__()
         # Load clean data.
         # load_clean_data() returns a tensor of shape (TOTAL_TURNS, 2*NBPMS)
@@ -93,6 +95,10 @@ class BPMSDataset(Dataset):
         clean_data_y = raw[NBPMS:, :]  # shape: (NBPMS, TOTAL_TURNS)
         if NUM_SAME_NOISE > 1 and NUM_SAME_OFFSET > 1:
             raise ValueError("Not sure why you're doing this.")
+
+        model_dat = tfs.read(get_model_dir(beam=BEAM) / "twiss.dat", index="NAME")
+        sqrt_betax = np.sqrt(model_dat["BETX"].values)
+        sqrt_betay = np.sqrt(model_dat["BETY"].values)
 
         if DATA_SCALING == "qt":
             # Initialize a QuantileTransformer for each channel.
@@ -119,15 +125,15 @@ class BPMSDataset(Dataset):
             norm_clean_y = (clean_data_y - self.mean_y) / self.std_y
         elif DATA_SCALING == "minmax":
             # Compute per-BPM minimum and maximum for the clean data.
-            self.min_x = torch.min(clean_data_x)  # shape: (NBPMS, 1)
-            self.max_x = torch.max(clean_data_x) + NOISE_FACTOR * 2  # shape: (NBPMS, 1)
+            self.min_x = torch.min(clean_data_x) #- (max(NOISE_FACTORS) * 5 / sqrt_betax.min()) # shape: (NBPMS, 1)
+            self.max_x = torch.max(clean_data_x) #+ (max(NOISE_FACTORS) * 5 / sqrt_betax.min())  # shape: (NBPMS, 1)
             # Scale clean data to [-1, 1]:
             norm_clean_x = (
                 2 * (clean_data_x - self.min_x) / (self.max_x - self.min_x) - 1
             )
 
-            self.min_y = torch.min(clean_data_y)
-            self.max_y = torch.max(clean_data_y) + NOISE_FACTOR * 2
+            self.min_y = torch.min(clean_data_y) #- (max(NOISE_FACTORS) * 5 / sqrt_betay.min())
+            self.max_y = torch.max(clean_data_y) #+ (max(NOISE_FACTORS) * 5 / sqrt_betay.min())
             norm_clean_y = (
                 2 * (clean_data_y - self.min_y) / (self.max_y - self.min_y) - 1
             )
@@ -147,11 +153,16 @@ class BPMSDataset(Dataset):
         # If not using offsets always set to 0
         if not USE_OFFSETS:
             offset = 0
+        num_noises = num_files // NUM_SAME_NOISE
         for i in range(num_files):
             # Generate noise for each channel.
             if i % NUM_SAME_NOISE == 0: 
-                noise_x = rng.normal(loc=0.0, scale=noise_factor, size=clean_data_x.shape)
-                noise_y = rng.normal(loc=0.0, scale=noise_factor, size=clean_data_y.shape)
+                noise_idx = i // NUM_SAME_NOISE
+                factor_idx = noise_idx % len(noise_factors)
+                # noise_x = rng.normal(loc=0.0, scale=noise_factor, size=clean_data_x.shape)
+                # noise_y = rng.normal(loc=0.0, scale=noise_factor, size=clean_data_y.shape)
+                noise_x = noise_factors[factor_idx] * rng.standard_normal(clean_data_x.shape) / sqrt_betax[:, None]
+                noise_y = noise_factors[factor_idx] * rng.standard_normal(clean_data_y.shape) / sqrt_betay[:, None]
 
             # Create noisy data by adding noise.
             noisy_x = clean_data_x + noise_x
@@ -300,13 +311,4 @@ def build_sample_dict(sample_list: list, dataset: BPMSDataset) -> dict:
     denorm_clean = dataset.denormalise(sample["clean"])
     denorm_denoised = dataset.denormalise(sample["denoised"])
 
-    return {
-        "x_noisy": denorm_sample[0],
-        "y_noisy": denorm_sample[1],
-        "x_full": denorm_full_sample[0],
-        "y_full": denorm_full_sample[1],
-        "x_clean": denorm_clean[0],
-        "y_clean": denorm_clean[1],
-        "x_denoised": denorm_denoised[0],
-        "y_denoised": denorm_denoised[1],
-    }
+    return denorm_sample, denorm_full_sample, denorm_clean, denorm_denoised
