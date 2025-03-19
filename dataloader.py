@@ -125,15 +125,23 @@ class BPMSDataset(Dataset):
             norm_clean_y = (clean_data_y - self.mean_y) / self.std_y
         elif DATA_SCALING == "minmax":
             # Compute per-BPM minimum and maximum for the clean data.
-            self.min_x = torch.min(clean_data_x) #- (max(NOISE_FACTORS) * 5 / sqrt_betax.min()) # shape: (NBPMS, 1)
-            self.max_x = torch.max(clean_data_x) #+ (max(NOISE_FACTORS) * 5 / sqrt_betax.min())  # shape: (NBPMS, 1)
+            self.min_x = torch.min(
+                clean_data_x
+            )  # - (max(NOISE_FACTORS) * 5 / sqrt_betax.min()) # shape: (NBPMS, 1)
+            self.max_x = torch.max(
+                clean_data_x
+            )  # + (max(NOISE_FACTORS) * 5 / sqrt_betax.min())  # shape: (NBPMS, 1)
             # Scale clean data to [-1, 1]:
             norm_clean_x = (
                 2 * (clean_data_x - self.min_x) / (self.max_x - self.min_x) - 1
             )
 
-            self.min_y = torch.min(clean_data_y) #- (max(NOISE_FACTORS) * 5 / sqrt_betay.min())
-            self.max_y = torch.max(clean_data_y) #+ (max(NOISE_FACTORS) * 5 / sqrt_betay.min())
+            self.min_y = torch.min(
+                clean_data_y
+            )  # - (max(NOISE_FACTORS) * 5 / sqrt_betay.min())
+            self.max_y = torch.max(
+                clean_data_y
+            )  # + (max(NOISE_FACTORS) * 5 / sqrt_betay.min())
             norm_clean_y = (
                 2 * (clean_data_y - self.min_y) / (self.max_y - self.min_y) - 1
             )
@@ -153,16 +161,23 @@ class BPMSDataset(Dataset):
         # If not using offsets always set to 0
         if not USE_OFFSETS:
             offset = 0
-        num_noises = num_files // NUM_SAME_NOISE
         for i in range(num_files):
             # Generate noise for each channel.
-            if i % NUM_SAME_NOISE == 0: 
+            if i % NUM_SAME_NOISE == 0:
                 noise_idx = i // NUM_SAME_NOISE
                 factor_idx = noise_idx % len(noise_factors)
                 # noise_x = rng.normal(loc=0.0, scale=noise_factor, size=clean_data_x.shape)
                 # noise_y = rng.normal(loc=0.0, scale=noise_factor, size=clean_data_y.shape)
-                noise_x = noise_factors[factor_idx] * rng.standard_normal(clean_data_x.shape) / sqrt_betax[:, None]
-                noise_y = noise_factors[factor_idx] * rng.standard_normal(clean_data_y.shape) / sqrt_betay[:, None]
+                noise_x = (
+                    noise_factors[factor_idx]
+                    * rng.standard_normal(clean_data_x.shape)
+                    / sqrt_betax[:, None]
+                )
+                noise_y = (
+                    noise_factors[factor_idx]
+                    * rng.standard_normal(clean_data_y.shape)
+                    / sqrt_betay[:, None]
+                )
 
             # Create noisy data by adding noise.
             noisy_x = clean_data_x + noise_x
