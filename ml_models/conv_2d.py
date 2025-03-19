@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
-from config import BASE_CHANNELS, BOTTLENECK_SIZE, NUM_PLANES, INIT
+from config import BASE_CHANNELS, BOTTLENECK_SIZE, NUM_CHANNELS, INIT
 
 H_ENC = 141
 W_ENC = 250
 class Conv2DAutoencoder(nn.Module):
-    def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS, bottleneck_dim=BOTTLENECK_SIZE):
+    def __init__(self, in_channels=NUM_CHANNELS, base_channels=BASE_CHANNELS, bottleneck_dim=BOTTLENECK_SIZE):
         """
         Args:
             in_channels (int): Number of input channels (2 for X and Y).
@@ -87,7 +87,7 @@ class Sine(nn.Module):
     def forward(self, x):
         return torch.sin(x)
 class SineConv2DAutoencoder(nn.Module):
-    def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS, latent_dim=BOTTLENECK_SIZE):
+    def __init__(self, in_channels=NUM_CHANNELS, base_channels=BASE_CHANNELS, latent_dim=BOTTLENECK_SIZE):
         """
         A 2D convolutional autoencoder using sine activations.
         Args:
@@ -151,7 +151,7 @@ class SineConv2DAutoencoder(nn.Module):
         return out
 
 class Conv2DAutoencoderLeaky(nn.Module):
-    def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS, bottleneck_dim=BOTTLENECK_SIZE):
+    def __init__(self, in_channels=NUM_CHANNELS, base_channels=BASE_CHANNELS, bottleneck_dim=BOTTLENECK_SIZE):
         """
         A 2D convolutional autoencoder with LeakyReLU activations in hidden layers.
         
@@ -249,7 +249,7 @@ class Conv2DAutoencoderLeaky(nn.Module):
         return x_out
 
 class Conv2DAutoencoderLeakyNoFC(nn.Module):
-    def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS):
+    def __init__(self, in_channels=NUM_CHANNELS, base_channels=BASE_CHANNELS):
         """
         A fully convolutional autoencoder with LeakyReLU activations,
         similar to Conv2DAutoencoderLeaky but without a fully connected bottleneck.
@@ -384,7 +384,7 @@ class Conv2DAutoencoderLeakyFourier(nn.Module):
     The encoder downsamples the input, the Fourier layer processes the latent features,
     and the decoder upsamples back to the original dimensions.
     """
-    def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS,
+    def __init__(self, in_channels=NUM_CHANNELS, base_channels=BASE_CHANNELS,
                  modes_height=20, modes_width=20):
         super(Conv2DAutoencoderLeakyFourier, self).__init__()
         
@@ -447,7 +447,7 @@ class Conv2DAutoencoderLeakyFourier(nn.Module):
         return x_out
 
 class DeepConvAutoencoder(nn.Module):
-    def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS):
+    def __init__(self, in_channels=NUM_CHANNELS, base_channels=BASE_CHANNELS):
         """
         A deep, fully convolutional autoencoder.
         This architecture uses four convolutional layers to downsample

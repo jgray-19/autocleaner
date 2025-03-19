@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from config import BASE_CHANNELS, NUM_PLANES, MODEL_DEPTH
+from config import BASE_CHANNELS, NUM_CHANNELS, MODEL_DEPTH
 from torch.utils.checkpoint import checkpoint
 
 class UNetAutoencoder(nn.Module):
-    def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS, depth=MODEL_DEPTH):
+    def __init__(self, in_channels=NUM_CHANNELS, base_channels=BASE_CHANNELS, depth=MODEL_DEPTH):
         """
         A U-Net style autoencoder for oscillatory data.
         
@@ -94,7 +94,7 @@ class UNetAutoencoder(nn.Module):
         return out
 
 class UNetAutoencoderFixedDepth(nn.Module):
-    def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS):
+    def __init__(self, in_channels=NUM_CHANNELS, base_channels=BASE_CHANNELS):
         """
         A U-Net–style autoencoder with fixed depth 4.
         
@@ -209,7 +209,7 @@ class UNetAutoencoderFixedDepth(nn.Module):
                          diffY // 2, diffY - diffY // 2])
 
 class UNetAutoencoderFixedDepthCheckpoint(nn.Module):
-    def __init__(self, in_channels=NUM_PLANES, base_channels=BASE_CHANNELS):
+    def __init__(self, in_channels=NUM_CHANNELS, base_channels=BASE_CHANNELS):
         """
         A U-Net–style autoencoder with fixed depth 4 using activation checkpointing
         to reduce GPU memory usage. This design is well-suited for oscillatory data since it:

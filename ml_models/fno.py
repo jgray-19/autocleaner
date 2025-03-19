@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.fft
-from config import NUM_PLANES, BASE_CHANNELS, MODEL_DEPTH
+from config import NUM_CHANNELS, BASE_CHANNELS, MODEL_DEPTH
 
 class SpectralConv2d(nn.Module):
     """
@@ -56,7 +56,7 @@ class FNO2d(nn.Module):
     
     This model is inspired by Li et al. (2020) (https://github.com/zongyi-li/fourier_neural_operator) :contentReference[oaicite:2]{index=2}.
     """
-    def __init__(self, in_channels=NUM_PLANES, out_channels=NUM_PLANES, width=BASE_CHANNELS, modes_height=10, modes_width=10, depth=MODEL_DEPTH):
+    def __init__(self, in_channels=NUM_CHANNELS, out_channels=NUM_CHANNELS, width=BASE_CHANNELS, modes_height=10, modes_width=10, depth=MODEL_DEPTH):
         super(FNO2d, self).__init__()
         self.width = width
         self.depth = depth

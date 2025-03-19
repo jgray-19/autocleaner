@@ -45,31 +45,86 @@ class LitAutoencoder(pl.LightningModule):
 
     def forward(self, x):
         return self.model(x)
+    
 
     def training_step(self, batch, batch_idx):
-        noisy = batch["noisy"]
-        clean = batch["clean"]
-        reconstructed = self(noisy)
+        # batch["noisy"] has shape (B, 2, NBPMS, NTURNS)
+        noisy_signal_x = batch["noisy"][:, 0:1, ...]  # shape (B, 1, NBPMS, NTURNS)
+        noisy_signal_y = batch["noisy"][:, 1:2, ...]  # shape (B, 1, NBPMS, NTURNS)
+        
+        # Process each channel through the model
+        recon_x = self(noisy_signal_x)
+        recon_y = self(noisy_signal_y)
+        
+        # Similarly, split the clean data
+        clean_x = batch["clean"][:, 0:1, ...]
+        clean_y = batch["clean"][:, 1:2, ...]
+        
+        # Compute loss for each channel and average them
         if RESIDUALS:
-            loss = self.loss_fn(noisy-reconstructed, clean)
+            loss_x = self.loss_fn(noisy_signal_x - recon_x, clean_x)
+            loss_y = self.loss_fn(noisy_signal_y - recon_y, clean_y)
         else:
-            loss = self.loss_fn(reconstructed, clean)
-
-        self.log("train_loss", loss, batch_size=noisy.size(0))
+            loss_x = self.loss_fn(recon_x, clean_x)
+            loss_y = self.loss_fn(recon_y, clean_y)
+        loss = (loss_x + loss_y) / 2.0
+        
+        self.log("train_loss", loss, batch_size=batch["noisy"].size(0))
+        self.log("train_loss_x", loss_x, batch_size=batch["noisy"].size(0))
+        self.log("train_loss_y", loss_y, batch_size=batch["noisy"].size(0))
         return loss
+
+    # def training_step(self, batch, batch_idx):
+    #     noisy = batch["noisy"]
+    #     clean = batch["clean"]
+    #     reconstructed = self(noisy)
+    #     if RESIDUALS:
+    #         loss = self.loss_fn(noisy - reconstructed, clean)
+    #     else:
+    #         loss = self.loss_fn(reconstructed, clean)
+
+    #     self.log("train_loss", loss, batch_size=noisy.size(0))
+    #     return loss
 
     def validation_step(self, batch, batch_idx):
-        noisy = batch["noisy"]
-        clean = batch["clean"]
-        reconstructed = self(noisy)
+        # batch["noisy"] has shape (B, 2, NBPMS, NTURNS)
+        noisy_signal_x = batch["noisy"][:, 0:1, ...]
+        noisy_signal_y = batch["noisy"][:, 1:2, ...]
+
+        # Process each channel through the model
+        recon_x = self(noisy_signal_x)
+        recon_y = self(noisy_signal_y)
+
+        # Similarly, split the clean data
+        clean_x = batch["clean"][:, 0:1, ...]
+        clean_y = batch["clean"][:, 1:2, ...]
+
+        # Compute loss for each channel and average them
         if RESIDUALS:
-            loss = self.loss_fn(noisy-reconstructed, clean)
+            loss_x = self.loss_fn(noisy_signal_x - recon_x, clean_x)
+            loss_y = self.loss_fn(noisy_signal_y - recon_y, clean_y)
         else:
-            loss = self.loss_fn(reconstructed, clean)
+            loss_x = self.loss_fn(recon_x, clean_x)
+            loss_y = self.loss_fn(recon_y, clean_y)
+        loss = (loss_x + loss_y) / 2.0
 
-
-        self.log("val_loss", loss, batch_size=noisy.size(0))
+        self.log("val_loss", loss, batch_size=batch["noisy"].size(0))
+        self.log("val_loss_x", loss_x, batch_size=batch["noisy"].size(0))
+        self.log("val_loss_y", loss_y, batch_size=batch["noisy"].size(0))
         return loss
+
+    # def validation_step(self, batch, batch_idx):
+    #     noisy = batch["noisy"]
+    #     clean = batch["clean"]
+    #     reconstructed = self(noisy)
+    #     if RESIDUALS:
+    #         loss = self.loss_fn(noisy - reconstructed, clean)
+    #     else:
+    #         loss = self.loss_fn(reconstructed, clean)
+
+
+    #     self.log("val_loss", loss, batch_size=noisy.size(0))
+    #     return loss
 
 
     def configure_optimizers(self):

@@ -59,8 +59,15 @@ def denoise_tbt(autoencoder_path: str, noisy_tbt_path: str) -> Path:
     # --- Run the autoencoder ---
     with torch.no_grad():
         # If your model uses a residual connection, adjust accordingly.
-        denoised_norm = model(noisy_norm)
+        denoised_x = model(noisy_norm[:, 0:1, ...])
+        # Process y-channel
+        denoised_y = model(noisy_norm[:, 1:2, ...])
     
+    # Concatenate the two outputs along the channel dimension to obtain shape (1, 2, NBPMS, NTURNS)
+    denoised_norm = torch.cat([denoised_x, denoised_y], dim=1)
+
+    assert denoised_norm.shape == (1, 2, NBPMS, NTURNS), "Output shape mismatch"
+
     # -- Remove the batch dimension --
     denoised_norm = denoised_norm.squeeze(0)
 

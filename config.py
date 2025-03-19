@@ -62,8 +62,8 @@ MODEL_DIR = get_model_dir(beam=BEAM)
 
 NLOGSTEPS = max(floor(TRAIN_RATIO * NUM_FILES / BATCH_SIZE), 1)
 
-NUM_PLANES = 2
-NUM_CHANNELS = NUM_PLANES
+# NUM_PLANES = 2
+NUM_CHANNELS = 1
 
 # Optimisation Settings
 NUM_EPOCHS = 100
@@ -104,7 +104,7 @@ experiment_config = {
     "num_same_noise": NUM_SAME_NOISE,
     "batch_size": BATCH_SIZE,
     "train_ratio": TRAIN_RATIO,
-    "num_planes": NUM_PLANES,
+    # "num_planes": NUM_PLANES,
     "num_channels": NUM_CHANNELS,
     "num_epochs": NUM_EPOCHS,
     "base_channels": BASE_CHANNELS,

@@ -4,7 +4,7 @@ import torch
 import turn_by_turn as tbt
 from torchviz import make_dot
 
-from config import CONFIG_NAME, NBPMS, NTURNS, NUM_PLANES, PLOT_DIR
+from config import CONFIG_NAME, NBPMS, NTURNS, NUM_CHANNELS, PLOT_DIR
 from fft_processing import calculate_fft_and_amps
 
 COLOURS = [
@@ -266,7 +266,7 @@ def plot_noisy_data(noisy, clean, bpm_index):
 
 
 def plot_model_architecture(
-    model, input_size=(NUM_PLANES, NBPMS, NTURNS), filename="model_architecture"
+    model, input_size=(NUM_CHANNELS, NBPMS, NTURNS), filename="model_architecture"
 ):
     """
     Generates a .png file showing the model architecture using torchviz.

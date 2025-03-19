@@ -1,5 +1,3 @@
-from typing import Union
-
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -232,7 +230,6 @@ class BPMSDataset(Dataset):
 
         noisy_sample = self.noisy_norm[idx][:, :, start_idx:end_idx]
         clean_sample = self.clean_norm[:, :, start_idx:end_idx]
-
         return {"noisy": noisy_sample, "clean": clean_sample}
 
     def get_full_noisy(self, idx):
@@ -286,8 +283,9 @@ class BPMSDataset(Dataset):
         return orig
 
 
-def load_data() -> Union[DataLoader, DataLoader, BPMSDataset]:
+def load_data() -> tuple[DataLoader, DataLoader, BPMSDataset]:
     """Loads the training and validation data."""
+    
     dataset = BPMSDataset(num_files=NUM_FILES)
     train_size = int(TRAIN_RATIO * len(dataset))
     val_size = len(dataset) - train_size
@@ -300,7 +298,6 @@ def load_data() -> Union[DataLoader, DataLoader, BPMSDataset]:
         shuffle=True,
         num_workers=4,
         pin_memory=False,
-        # persistent_workers=True,  # Reuse dataloader workers
     )
     val_loader = DataLoader(
         val_dataset,

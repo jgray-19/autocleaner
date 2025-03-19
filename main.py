@@ -13,7 +13,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 # Import configurations and utilities
 from config import (
     CONFIG_NAME,
-    DENOISED_INDEX,
+    # DENOISED_INDEX,
     LEARNING_RATE,
     LOAD_MODEL,
     LOSS_TYPE,
@@ -21,7 +21,7 @@ from config import (
     MODEL_TYPE,
     NUM_EPOCHS,
     PLOT_DIR,
-    SAMPLE_INDEX,
+    # SAMPLE_INDEX,
     WEIGHT_DECAY,
     print_config,
     save_experiment_config,
@@ -32,7 +32,7 @@ from config import (
     RESUME_FROM_CKPT,
     RESIDUALS,
 )
-from dataloader import build_sample_dict, load_data, write_data
+from dataloader import build_sample_dict, load_data#, write_data
 from ml_models.conv_2d import (
     Conv2DAutoencoder,
     Conv2DAutoencoderLeaky,
@@ -152,16 +152,20 @@ b4_denoise = time.time()
 sample_list = []
 val_indices = val_loader.dataset.indices
 for val_idx, batch in enumerate(val_loader):
-    noisy_batch = batch["noisy"]
+    noisy_batch = batch["noisy"]  # shape: (B, 2, NBPMS, NTURNS)
 
-    # Process the batch through the model
     with torch.no_grad():
-        if RESIDUALS: 
-            denoised_batch = model(noisy_batch) - noisy_batch
+        # Process each channel separately
+        if RESIDUALS:
+            denoised_x = model(noisy_batch[:, 0:1, ...]) - noisy_batch[:, 0:1, ...]
+            denoised_y = model(noisy_batch[:, 1:2, ...]) - noisy_batch[:, 1:2, ...]
         else:
-            denoised_batch = model(noisy_batch)
+            denoised_x = model(noisy_batch[:, 0:1, ...])
+            denoised_y = model(noisy_batch[:, 1:2, ...])
+        # Recombine the two denoised channels into one paired tensor
+        denoised_batch = torch.cat([denoised_x, denoised_y], dim=1)  # shape: (B, 2, NBPMS, NTURNS)
 
-    # Add the model output to the batch dictionary.
+    # Build a sample list for later visualization/inference.
     assert denoised_batch.size(0) == noisy_batch.size(0)  # Just checking
     for batch_idx in range(denoised_batch.size(0)):
         dataset_idx = val_indices[val_idx * val_loader.batch_size + batch_idx]
