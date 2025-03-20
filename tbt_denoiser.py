@@ -45,9 +45,10 @@ def denoise_tbt(autoencoder_path: str, noisy_tbt_path: str) -> Path:
     # --- Normalize noisy data using minmax scaling from the clean file ---
     norm_x = 2 * (x_data - min_x) / (max_x - min_x) - 1
     norm_y = 2 * (y_data - min_y) / (max_y - min_y) - 1
-    # Stack into a tensor of shape (2, NBPMS, NTURNS), then add the batch dimension
-    noisy_norm = torch.tensor(np.stack([norm_x, norm_y], axis=0), dtype=torch.float32)
-    noisy_norm = noisy_norm.unsqueeze(0)
+
+    # Convert from shape (NBPMS, NTURNS) to (1, 1, NBPMS, NTURNS)
+    noisy_norm_x = norm_x.unsqueeze(0).unsqueeze(0)
+    noisy_norm_y = norm_y.unsqueeze(0).unsqueeze(0)
 
     # --- Load the autoencoder model ---
     model = UNetAutoencoderFixedDepthCheckpoint()
@@ -58,28 +59,18 @@ def denoise_tbt(autoencoder_path: str, noisy_tbt_path: str) -> Path:
 
     # --- Run the autoencoder ---
     with torch.no_grad():
-        # If your model uses a residual connection, adjust accordingly.
-        denoised_x = model(noisy_norm[:, 0:1, ...])
-        # Process y-channel
-        denoised_y = model(noisy_norm[:, 1:2, ...])
+        recon_x = model(noisy_norm_x)
+        recon_y = model(noisy_norm_y)
     
-    # Concatenate the two outputs along the channel dimension to obtain shape (1, 2, NBPMS, NTURNS)
-    denoised_norm = torch.cat([denoised_x, denoised_y], dim=1)
-
-    assert denoised_norm.shape == (1, 2, NBPMS, NTURNS), "Output shape mismatch"
-
     # -- Remove the batch dimension --
-    denoised_norm = denoised_norm.squeeze(0)
+    recon_x = recon_x.squeeze(0).squeeze(0).detach().cpu().numpy()
+    recon_y = recon_y.squeeze(0).squeeze(0).detach().cpu().numpy()
 
 
     # --- Inverse minmax scaling ---
-    denoised_norm_np = denoised_norm.detach().cpu().numpy()  # shape (2, NBPMS, NTURNS)
-    denoised_x = (denoised_norm_np[0] + 1) / 2 * (max_x - min_x) + min_x
-    denoised_y = (denoised_norm_np[1] + 1) / 2 * (max_y - min_y) + min_y
-    # Stack back into cleaned tensor (2, NBPMS, NTURNS)
-    cleaned = np.stack([denoised_x, denoised_y], axis=0)
-    cleaned_tensor = torch.tensor(cleaned, dtype=torch.float32)
+    recon_x = (recon_x + 1) / 2 * (max_x - min_x) + min_x
+    recon_y = (recon_y + 1) / 2 * (max_y - min_y) + min_y
 
     # --- Write the cleaned data ---
-    cleaned_file_path, _ = write_data(cleaned_tensor, noise_index=DENOISED_INDEX)
+    cleaned_file_path, _ = write_data(recon_x, recon_y, noise_index=DENOISED_INDEX)
     return cleaned_file_path

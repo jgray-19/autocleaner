@@ -1,5 +1,3 @@
-from typing import Tuple
-
 import numpy as np
 import torch
 from omc3.harpy.frequency import get_freq_mask, windowing
@@ -11,7 +9,7 @@ window = torch.tensor(window, dtype=torch.float64)
 
 def windowed_padded_rfft_torch(
         matrix: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Calculates the spectra using specified windowing function and zero-padding with PyTorch tensors.
 
@@ -63,7 +61,8 @@ def windowed_padded_rfft_torch(
 
     return frequencies, coefficients
 
-def calculate_fft_and_amps(data: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+def calculate_fft_and_amps(data: np.ndarray):
+    data = torch.tensor(data, dtype=torch.float32)
     freqs, amps = windowed_padded_rfft_torch(data.T)
     return freqs, normalize_and_log(amps)
 
@@ -71,4 +70,4 @@ def calculate_fft_and_amps(data: torch.Tensor) -> Tuple[torch.Tensor, torch.Tens
 def normalize_and_log(amps):
     amps = torch.abs(amps)
     amps = amps / amps.max(dim=1, keepdim=True)[0]
-    return torch.log10(amps)
+    return torch.log10(amps).numpy()

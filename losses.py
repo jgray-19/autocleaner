@@ -30,33 +30,18 @@ class CorrelationLoss(nn.Module):
             Scalar loss = average(1 - corr_i) over the batch i in [1..B].
         """
         B = pred.size(0)
-        loss_sum = 0.0
-        
-        # Process each sample in the batch
-        for i in range(B):
-            # Flatten from (2, NBPMS, NTURNS) -> (2*NBPMS*NTURNS,)
-            p = pred[i].view(-1)
-            t = target[i].view(-1)
-            
-            # Remove mean
-            p_centered = p - p.mean()
-            t_centered = t - t.mean()
-            
-            # Dot product for numerator
-            numerator = (p_centered * t_centered).sum()
-            
-            # Product of norms for denominator
-            denom = torch.sqrt((p_centered**2).sum() * (t_centered**2).sum()) + self.eps
-            
-            # correlation in [-1, 1]
-            corr = numerator / denom
-            
-            # Convert correlation to a loss => 1 - corr
-            loss_i = 1 - corr
-            loss_sum += loss_i
-        
-        # Average across the batch
-        return loss_sum / B
+        # Flatten each sample to a vector.
+        p = pred.view(B, -1)
+        t = target.view(B, -1)
+        # Remove means per sample.
+        p_centered = p - p.mean(dim=1, keepdim=True)
+        t_centered = t - t.mean(dim=1, keepdim=True)
+        # Compute components.
+        numerator = torch.sum(p_centered * t_centered, dim=1)
+        denom = torch.sqrt(torch.sum(p_centered**2, dim=1) * torch.sum(t_centered**2, dim=1)) + self.eps
+        # 1 - Pearson correlation per sample.
+        corr = numerator / denom
+        return torch.mean(1 - corr)
 
 
 class CombinedCorrelationLoss(nn.Module):
@@ -73,26 +58,18 @@ class CombinedCorrelationLoss(nn.Module):
         
     def correlation_coefficient(self, x, y):
         """Calculate batch-wise Pearson correlation coefficient"""
-        # Reshape to handle multi-dimensional data
-        batch_size = x.size(0)
-        n_channels = x.size(1)
-        x_flat = x.reshape(batch_size, n_channels, -1)
-        y_flat = y.reshape(batch_size, n_channels, -1)
-        
-        # Center the variables
-        x_centered = x_flat - x_flat.mean(dim=-1, keepdim=True)
-        y_centered = y_flat - y_flat.mean(dim=-1, keepdim=True)
-        
-        # Calculate correlation
-        xy_cov = torch.sum(x_centered * y_centered, dim=-1)
-        x_var = torch.sqrt(torch.sum(x_centered**2, dim=-1))
-        y_var = torch.sqrt(torch.sum(y_centered**2, dim=-1))
-        
-        # Handle potential division by zero with small epsilon
+        # x, y shape: (B, 1, ...)
+        B = x.size(0)
+        # Flatten out the channel dimension.
+        x_flat = x.view(B, -1)
+        y_flat = y.view(B, -1)
+        x_centered = x_flat - x_flat.mean(dim=1, keepdim=True)
+        y_centered = y_flat - y_flat.mean(dim=1, keepdim=True)
+        numerator = torch.sum(x_centered * y_centered, dim=1)
+        x_norm = torch.sqrt(torch.sum(x_centered**2, dim=1))
+        y_norm = torch.sqrt(torch.sum(y_centered**2, dim=1))
         epsilon = 1e-8
-        corr = xy_cov / (x_var * y_var + epsilon)
-        
-        # Average across batch and channels
+        corr = numerator / (x_norm * y_norm + epsilon)
         return corr.mean()
     def forward(self, pred, target):
         """Calculate the weighted loss"""
@@ -178,39 +155,21 @@ class SSPLoss(nn.Module):
     def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            pred:   Tensor of shape (B, C, H, W), real-valued signals.
-            target: Tensor of shape (B, C, H, W), real-valued signals.
+            pred:   Tensor of shape (B, 1, H, W), real-valued signals.
+            target: Tensor of shape (B, 1, H, W), real-valued signals.
 
         Returns:
             A scalar tensor representing the average SSP loss over the batch.
         """
-        B = pred.shape[0]
-        # We'll accumulate SSP values per sample, then average.
-        ssp_sum = 0.0
-
-        for i in range(B):
-            # Extract single sample: (C, H, W)
-            p = pred[i]
-            t = target[i]
-
-            # 1) Compute rFFT2 (real 2D FFT)
-            #    -> shape (C, H, W//2+1), dtype=torch.complex64 (or complex128)
-            p_fft = torch.fft.rfft2(p, norm="ortho")
-            t_fft = torch.fft.rfft2(t, norm="ortho")
-
-            # 2) Compute the L2 norm of the difference in the Fourier domain
-            diff = p_fft - t_fft        # shape (C, H, W//2+1)
-            diff_l2 = torch.sum(torch.abs(diff)**2).sqrt()  # scalar
-
-            # 3) Compute the L2 norms of p_fft and t_fft individually
-            p_l2 = torch.sum(torch.abs(p_fft)**2).sqrt()
-            t_l2 = torch.sum(torch.abs(t_fft)**2).sqrt()
-
-            # 4) Surface Similarity Parameter for this sample
-            denom = p_l2 + t_l2 + self.eps
-            ssp_i = diff_l2 / denom   # in [0, 1]
-
-            ssp_sum += ssp_i
-
-        # Average across batch
-        return ssp_sum / B
+        p = pred.squeeze(1)  # shape: (B, H, W)
+        t = target.squeeze(1)
+        # Compute 2D FFTs vectorized over the batch.
+        p_fft = torch.fft.rfft2(p, norm="ortho")
+        t_fft = torch.fft.rfft2(t, norm="ortho")
+        # Compute L2 norm differences per sample.
+        diff = p_fft - t_fft
+        diff_l2 = torch.norm(diff, dim=(1,2))
+        p_l2 = torch.norm(p_fft, dim=(1,2))
+        t_l2 = torch.norm(t_fft, dim=(1,2))
+        ssp = diff_l2 / (p_l2 + t_l2 + self.eps)
+        return ssp.mean()

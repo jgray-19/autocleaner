@@ -32,7 +32,7 @@ def get_tbt_path(beam: int, nturns: int, index: int) -> Path:
 
 # General Settings
 BEAM = 1
-NUM_FILES = 2000
+NUM_FILES = 200
 LOAD_MODEL = False
 RESUME_FROM_CKPT = False
 if RESUME_FROM_CKPT:
@@ -43,8 +43,10 @@ if RESUME_FROM_CKPT:
     # CONFIG_NAME = "2025-03-13_18-21-08" # back to 2 but more files, more base channels, more files, smaller batches
     # CONFIG_NAME = "2025-03-17_09-47-23" # Fixed noise level, noise with beta functions 10 um.
     # CONFIG_NAME = "2025-03-17_16-31-06"  # Above but 100 um
-    CONFIG_NAME = "2025-03-18_17-07-40" # Above but now doing many noises on updated thing
-    # CONFIG_NAME = "2025-03-19_17-07-40" # Above but half the initial learning rate.
+    # CONFIG_NAME = "2025-03-18_17-07-40" # Above but now doing many noises on updated thing
+    # CONFIG_NAME = "2025-03-19_22-46-55" # Above but tenth the initial learning rate. Also split x and y.
+    CONFIG_NAME = "2025-03-20_09-13-50" # Above but half same noise and 8 base channels
+
 else:
     CONFIG_NAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
@@ -52,9 +54,9 @@ else:
 NBPMS = 563
 TOTAL_TURNS = 1500  # Total turns in the simulated data file
 NTURNS = 1000  # Training window length
-BATCH_SIZE = 10
+BATCH_SIZE = 25
 TRAIN_RATIO = 0.8
-NUM_SAME_NOISE = 20
+NUM_SAME_NOISE = 2
 NUM_SAME_OFFSET = 1
 
 MODEL_SAVE_PATH = "conv_autoencoder.pth"
@@ -66,11 +68,11 @@ NLOGSTEPS = max(floor(TRAIN_RATIO * NUM_FILES / BATCH_SIZE), 1)
 NUM_CHANNELS = 1
 
 # Optimisation Settings
-NUM_EPOCHS = 100
+NUM_EPOCHS = 32
 BOTTLENECK_SIZE = 16
-BASE_CHANNELS = 24
+BASE_CHANNELS = 8
 LEARNING_RATE = 5e-4
-WEIGHT_DECAY = 1e-5
+WEIGHT_DECAY = 1e-4
 
 ALPHA = 0.5
 
@@ -79,7 +81,8 @@ SAMPLE_INDEX = "noisy"
 NONOISE_INDEX = "zero_noise"
 
 # NOISE_FACTORS = [1e-3, 9e-4, 8e-4, 7e-4, 6e-4, 5e-4, 4e-4, 3e-4, 2e-4, 1e-4, 5e-5]
-NOISE_FACTORS = [1e-3, 5e-4, 1e-4, 5e-5]
+# NOISE_FACTORS = [1e-3, 5e-4, 1e-4, 5e-5]
+NOISE_FACTORS = [5e-4, 1e-4]
 
 # MODEL_TYPE = "leaky"
 MODEL_TYPE = "unet_fixed_checkpoint"
@@ -88,8 +91,8 @@ RESIDUALS = False
 
 LOSS_TYPE = "comb_ssp"
 # LOSS_TYPE = "mse"
-SCHEDULER = True
-MIN_LR = 1e-5
+SCHEDULER = False
+MIN_LR = 1e-6
 INIT = "xavier"
 DATA_SCALING = "minmax"
 USE_OFFSETS = True

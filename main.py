@@ -71,10 +71,10 @@ train_loader, val_loader, dataset = load_data()
 print(f"Data loaded. Took {time.time() - b4_load:.2f} seconds.")
 
 # Visualise data distribution from one batch
-batch = next(iter(train_loader))
-plot_data_distribution(batch["noisy"], "Noisy Data Distribution")
-plot_data_distribution(batch["clean"], "Clean Data Distribution")
-plot_noisy_data(batch["noisy"][0, 0, :, :], batch["clean"][0, 0, :, :], 111)
+# batch = next(iter(train_loader))
+# plot_data_distribution(batch["noisy"], "Noisy Data Distribution")
+# plot_data_distribution(batch["clean"], "Clean Data Distribution")
+# plot_noisy_data(batch["noisy"][0, 0, :, :], batch["clean"][0, 0, :, :], 111)
 
 # Initialize or Load Model
 if MODEL_TYPE == "sine":
@@ -149,42 +149,29 @@ else:
 print("Denoising validation data...")
 b4_denoise = time.time()
 
-sample_list = []
-val_indices = val_loader.dataset.indices
-for val_idx, batch in enumerate(val_loader):
-    noisy_batch = batch["noisy"]  # shape: (B, 2, NBPMS, NTURNS)
+batch = next(iter(val_loader))
+noisy_batch_x = batch["noisy_x"]  # shape: (B, 1, NBPMS, NTURNS)
+noisy_batch_y = batch["noisy_y"]  # shape: (B, 1, NBPMS, NTURNS)
 
-    with torch.no_grad():
-        # Process each channel separately
-        if RESIDUALS:
-            denoised_x = model(noisy_batch[:, 0:1, ...]) - noisy_batch[:, 0:1, ...]
-            denoised_y = model(noisy_batch[:, 1:2, ...]) - noisy_batch[:, 1:2, ...]
-        else:
-            denoised_x = model(noisy_batch[:, 0:1, ...])
-            denoised_y = model(noisy_batch[:, 1:2, ...])
-        # Recombine the two denoised channels into one paired tensor
-        denoised_batch = torch.cat([denoised_x, denoised_y], dim=1)  # shape: (B, 2, NBPMS, NTURNS)
+with torch.no_grad():
+    if RESIDUALS:
+        recon_x = noisy_batch_x - model(noisy_batch_x)
+        recon_y = noisy_batch_y - model(noisy_batch_y)
+    else:
+        recon_x = model(noisy_batch_x)
+        recon_y = model(noisy_batch_y)
 
-    # Build a sample list for later visualization/inference.
-    assert denoised_batch.size(0) == noisy_batch.size(0)  # Just checking
-    for batch_idx in range(denoised_batch.size(0)):
-        dataset_idx = val_indices[val_idx * val_loader.batch_size + batch_idx]
-        full_noisy = dataset.get_full_noisy(dataset_idx)
-        sample = {
-            "noisy": noisy_batch[batch_idx],
-            "noisy_full": full_noisy,
-            "clean": batch["clean"][batch_idx],
-            "denoised": denoised_batch[batch_idx],
-        }
-        sample_list.append(sample)
-    break
+assert recon_x.size(0) == noisy_batch_x.size(0) == noisy_batch_y.size(0) == recon_y.size(0)
+sample = {
+    "noisy_x": noisy_batch_x[0, 0, ...].numpy(),
+    "noisy_y": noisy_batch_y[0, 0, ...].numpy(),
+    "recon_x": recon_x[0, 0, ...].numpy(),
+    "recon_y": recon_y[0, 0, ...].numpy(),
+    "clean_x": batch["clean_x"][0, 0, ...].numpy(),
+    "clean_y": batch["clean_y"][0, 0, ...].numpy(),
+}
 
-(
-    selected_noisy_sample,
-    selected_noisy_full_sample,
-    selected_clean_sample,
-    select_denoised_sample,
-) = build_sample_dict(sample_list, dataset)
+sample_dict = build_sample_dict(sample, dataset)
 
 print(f"Denoising took {time.time() - b4_denoise:.2f} seconds.")
 
@@ -195,15 +182,6 @@ print(f"Denoised Data for Device {device_index}")
 save_experiment_config(PLOT_DIR)
 
 # Plot the denoised data
-plot_denoised_data(
-    select_denoised_sample, selected_noisy_sample, selected_clean_sample, device_index
-)
-
-# Write out the denoised data
-# denoised_path, denoised_sdds = write_data(select_denoised_sample, DENOISED_INDEX)
-# noisy_path, noisy_sdds = write_data(selected_noisy_full_sample, SAMPLE_INDEX)
-# noisy_path, noisy_sdds = write_data(selected_noisy_sample, SAMPLE_INDEX + "_split")
-# print(f"Denoised data written to {denoised_path}")
-# print(f"Noisy data written to {noisy_path}")
+plot_denoised_data(sample_dict, device_index)
 
 plt.show()

@@ -1,12 +1,12 @@
+import glob
+import os
+
 import pytorch_lightning as pl
 import torch
 import torch.optim as optim
 
-from config import NUM_EPOCHS, SCHEDULER, ALPHA, MIN_LR, RESIDUALS
-from losses import CombinedCorrelationLoss, CorrelationLoss, fft_loss_per_bpm, SSPLoss
-
-import os
-import glob
+from config import ALPHA, MIN_LR, NUM_EPOCHS, RESIDUALS, SCHEDULER
+from losses import CombinedCorrelationLoss, CorrelationLoss, SSPLoss, fft_loss_per_bpm
 
 
 class LitAutoencoder(pl.LightningModule):
@@ -45,21 +45,19 @@ class LitAutoencoder(pl.LightningModule):
 
     def forward(self, x):
         return self.model(x)
-    
 
     def training_step(self, batch, batch_idx):
-        # batch["noisy"] has shape (B, 2, NBPMS, NTURNS)
-        noisy_signal_x = batch["noisy"][:, 0:1, ...]  # shape (B, 1, NBPMS, NTURNS)
-        noisy_signal_y = batch["noisy"][:, 1:2, ...]  # shape (B, 1, NBPMS, NTURNS)
-        
+        noisy_signal_x = batch["noisy_x"]  # shape (B, 1, NBPMS, NTURNS)
+        noisy_signal_y = batch["noisy_y"]  # shape (B, 1, NBPMS, NTURNS)
+
         # Process each channel through the model
         recon_x = self(noisy_signal_x)
         recon_y = self(noisy_signal_y)
-        
+
         # Similarly, split the clean data
-        clean_x = batch["clean"][:, 0:1, ...]
-        clean_y = batch["clean"][:, 1:2, ...]
-        
+        clean_x = batch["clean_x"]
+        clean_y = batch["clean_y"]
+
         # Compute loss for each channel and average them
         if RESIDUALS:
             loss_x = self.loss_fn(noisy_signal_x - recon_x, clean_x)
@@ -68,36 +66,23 @@ class LitAutoencoder(pl.LightningModule):
             loss_x = self.loss_fn(recon_x, clean_x)
             loss_y = self.loss_fn(recon_y, clean_y)
         loss = (loss_x + loss_y) / 2.0
-        
-        self.log("train_loss", loss, batch_size=batch["noisy"].size(0))
-        self.log("train_loss_x", loss_x, batch_size=batch["noisy"].size(0))
-        self.log("train_loss_y", loss_y, batch_size=batch["noisy"].size(0))
+
+        self.log("train_loss", loss, batch_size=batch["noisy_x"].size(0))
+        # self.log("train_loss_x", loss_x, batch_size=batch["noisy"].size(0))
+        # self.log("train_loss_y", loss_y, batch_size=batch["noisy"].size(0))
         return loss
-
-    # def training_step(self, batch, batch_idx):
-    #     noisy = batch["noisy"]
-    #     clean = batch["clean"]
-    #     reconstructed = self(noisy)
-    #     if RESIDUALS:
-    #         loss = self.loss_fn(noisy - reconstructed, clean)
-    #     else:
-    #         loss = self.loss_fn(reconstructed, clean)
-
-    #     self.log("train_loss", loss, batch_size=noisy.size(0))
-    #     return loss
 
     def validation_step(self, batch, batch_idx):
-        # batch["noisy"] has shape (B, 2, NBPMS, NTURNS)
-        noisy_signal_x = batch["noisy"][:, 0:1, ...]
-        noisy_signal_y = batch["noisy"][:, 1:2, ...]
+        noisy_signal_x = batch["noisy_x"]  # shape (B, 1, NBPMS, NTURNS)
+        noisy_signal_y = batch["noisy_y"]  # shape (B, 1, NBPMS, NTURNS)
 
         # Process each channel through the model
         recon_x = self(noisy_signal_x)
         recon_y = self(noisy_signal_y)
 
         # Similarly, split the clean data
-        clean_x = batch["clean"][:, 0:1, ...]
-        clean_y = batch["clean"][:, 1:2, ...]
+        clean_x = batch["clean_x"]
+        clean_y = batch["clean_y"]
 
         # Compute loss for each channel and average them
         if RESIDUALS:
@@ -108,24 +93,10 @@ class LitAutoencoder(pl.LightningModule):
             loss_y = self.loss_fn(recon_y, clean_y)
         loss = (loss_x + loss_y) / 2.0
 
-        self.log("val_loss", loss, batch_size=batch["noisy"].size(0))
-        self.log("val_loss_x", loss_x, batch_size=batch["noisy"].size(0))
-        self.log("val_loss_y", loss_y, batch_size=batch["noisy"].size(0))
+        self.log("val_loss", loss, batch_size=batch["noisy_x"].size(0))
+        # self.log("val_loss_x", loss_x, batch_size=batch["noisy"].size(0))
+        # self.log("val_loss_y", loss_y, batch_size=batch["noisy"].size(0))
         return loss
-
-    # def validation_step(self, batch, batch_idx):
-    #     noisy = batch["noisy"]
-    #     clean = batch["clean"]
-    #     reconstructed = self(noisy)
-    #     if RESIDUALS:
-    #         loss = self.loss_fn(noisy - reconstructed, clean)
-    #     else:
-    #         loss = self.loss_fn(reconstructed, clean)
-
-
-    #     self.log("val_loss", loss, batch_size=noisy.size(0))
-    #     return loss
-
 
     def configure_optimizers(self):
         optimizer = optim.AdamW(
@@ -134,13 +105,16 @@ class LitAutoencoder(pl.LightningModule):
             weight_decay=self.weight_decay,
         )
         if SCHEDULER:
-            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, eta_min=MIN_LR, T_max=NUM_EPOCHS)
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, eta_min=MIN_LR, T_max=NUM_EPOCHS
+            )
             return [optimizer], [scheduler]
         return optimizer
 
+
 def find_newest_file(directory_path):
     # Get a list of all files in the directory
-    files = glob.glob(os.path.join(directory_path, '*.ckpt'))
-    
+    files = glob.glob(os.path.join(directory_path, "*.ckpt"))
+
     # Find the newest file
     return max(files, key=os.path.getctime)

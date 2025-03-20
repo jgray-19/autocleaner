@@ -1,8 +1,8 @@
 import numpy as np
 from matplotlib import pyplot as plt
-
+from config import PLOT_DIR
 from tbt_denoiser import denoise_tbt
-from analysis import run_harpy_analysis, process_tbt_data, format_noise, rdt_plots_dir
+from analysis import run_harpy_analysis, process_tbt_data, format_noise
 
 COLOURS = [
     "#0072B2",  # Blue
@@ -30,6 +30,9 @@ rdts = [  # Normal Sextupole
 
 # Define noise levels
 noise_levels = [1e-4, 2.5e-4, 5e-4, 1e-3]
+plot_dir = PLOT_DIR / "harpy"
+plot_dir.mkdir(exist_ok=True)
+    
 
 # RDTs to plot separately
 rdts_to_plot = ["f3000_x", "f1011_y"]
@@ -46,10 +49,10 @@ for i, noise in enumerate(noise_levels):
     print("Cleaned file written to:", auto_cleaned_file)
 
     # Run Harpy analysis for the three cases
-    noise_dfs["noisy"], _ = run_harpy_analysis(tbt_file         , rdts=rdts            , turn_bits=12)
-    noise_dfs["clean"], _ = run_harpy_analysis(tbt_file_clean   , rdts=rdts, clean=True, turn_bits=12)
-    noise_dfs["zero"], _  = run_harpy_analysis(tbt_file_zero    , rdts=rdts            , turn_bits=12)
-    noise_dfs["auto"], _  = run_harpy_analysis(auto_cleaned_file, rdts=rdts            , turn_bits=12)
+    noise_dfs["noisy"], _ = run_harpy_analysis(tbt_file         , rdts=rdts            , turn_bits=16)
+    noise_dfs["clean"], _ = run_harpy_analysis(tbt_file_clean   , rdts=rdts, clean=True, turn_bits=16)
+    noise_dfs["zero"], _  = run_harpy_analysis(tbt_file_zero    , rdts=rdts            , turn_bits=16)
+    noise_dfs["auto"], _  = run_harpy_analysis(auto_cleaned_file, rdts=rdts            , turn_bits=16)
     rdt_dfs[noise] = noise_dfs
 
 for rdt_str in rdts_to_plot:
@@ -122,7 +125,7 @@ for rdt_str in rdts_to_plot:
 
     plt.tight_layout()
     plt.savefig(
-        rdt_plots_dir(noise) / f"{rdt_str}_multi_noise.png",
+        plot_dir / f"{rdt_str}_multi_noise.png",
         dpi=300,
         bbox_inches="tight",
     )
