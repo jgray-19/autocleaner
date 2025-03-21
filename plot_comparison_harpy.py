@@ -30,6 +30,7 @@ rdts = [  # Normal Sextupole
 
 # Define noise levels
 noise_levels = [1e-4, 2.5e-4, 5e-4, 1e-3]
+# noise_levels = [1e-4, 1e-3] # 
 plot_dir = PLOT_DIR / "harpy"
 plot_dir.mkdir(exist_ok=True)
     
@@ -49,86 +50,93 @@ for i, noise in enumerate(noise_levels):
     print("Cleaned file written to:", auto_cleaned_file)
 
     # Run Harpy analysis for the three cases
-    noise_dfs["noisy"], _ = run_harpy_analysis(tbt_file         , rdts=rdts            , turn_bits=16)
-    noise_dfs["clean"], _ = run_harpy_analysis(tbt_file_clean   , rdts=rdts, clean=True, turn_bits=16)
-    noise_dfs["zero"], _  = run_harpy_analysis(tbt_file_zero    , rdts=rdts            , turn_bits=16)
-    noise_dfs["auto"], _  = run_harpy_analysis(auto_cleaned_file, rdts=rdts            , turn_bits=16)
+    noise_dfs["noisy"], _ = run_harpy_analysis(tbt_file         , rdts=rdts            , turn_bits=12)
+    # noise_dfs["clean"], _ = run_harpy_analysis(tbt_file_clean   , rdts=rdts, clean=True, turn_bits=12)
+    noise_dfs["zero"], _  = run_harpy_analysis(tbt_file_zero    , rdts=rdts            , turn_bits=12)
+    noise_dfs["auto"], _  = run_harpy_analysis(auto_cleaned_file, rdts=rdts            , turn_bits=12)
     rdt_dfs[noise] = noise_dfs
 
-for rdt_str in rdts_to_plot:
-    plt.rcParams.update({"font.size": 22})
-    fig, axs = plt.subplots(1, 4, figsize=(30, 12))  # 1 row, 4 columns
-    fig.suptitle(f"{rdt_str}", fontsize=28, fontweight="bold")
-    for i, noise in enumerate(noise_levels):
-        omc_calc = np.abs(rdt_dfs[noise]["noisy"][rdt_str]["AMP"])
-        omc_calc_clean = np.abs(rdt_dfs[noise]["clean"][rdt_str]["AMP"])
-        omc_calc_zero = np.abs(rdt_dfs[noise]["zero"][rdt_str]["AMP"])
-        omc_calc_auto = np.abs(rdt_dfs[noise]["auto"][rdt_str]["AMP"])
+plt.rcParams.update({"font.size": 22})
+for amp_or_phase in ["AMP", "PHASE"]:
+    for rdt_str in rdts_to_plot:
+        fig, axs = plt.subplots(1, 4, figsize=(30, 12))  # 1 row, 4 columns
+        # fig, axs = plt.subplots(1, 2, figsize=(15, 12))  # 1 row, 2 columns
+        fig.suptitle(f"{rdt_str}", fontsize=28, fontweight="bold")
+        for i, noise in enumerate(noise_levels):
+            omc_calc = np.abs(rdt_dfs[noise]["noisy"][rdt_str][amp_or_phase])
+            # omc_calc_clean = np.abs(rdt_dfs[noise]["clean"][rdt_str][amp_or_phase])
+            omc_calc_zero = np.abs(rdt_dfs[noise]["zero"][rdt_str][amp_or_phase])
+            omc_calc_auto = np.abs(rdt_dfs[noise]["auto"][rdt_str][amp_or_phase])
 
-        diff = (omc_calc - omc_calc_zero) / omc_calc_zero
-        diff_clean = (omc_calc_clean - omc_calc_zero) / omc_calc_zero
-        diff_auto = (omc_calc_auto - omc_calc_zero) / omc_calc_zero
+            diff = (omc_calc - omc_calc_zero) / omc_calc_zero
+            # diff_clean = (omc_calc_clean - omc_calc_zero) / omc_calc_zero
+            diff_auto = (omc_calc_auto - omc_calc_zero) / omc_calc_zero
 
-        data_dict = {
-            "Zero Noise": {
-                "x_data": rdt_dfs[noise]["zero"][rdt_str]["S"],
-                "y_data": omc_calc_zero,
-                "color": COLOURS[1],
-                "linestyle": "solid",
-                "alpha": 1.0,
-            },
-            "Cleaned": {
-                "x_data": rdt_dfs[noise]["clean"][rdt_str]["S"],
-                "y_data": omc_calc_clean,
-                "color": COLOURS[2],
-                "linestyle": "dashed",
-                "alpha": 0.7,
-                "avg_err": diff_clean.abs().mean(),
-            },
-            "Autoencoder Denoised": {
-                "x_data": rdt_dfs[noise]["auto"][rdt_str]["S"],
-                "y_data": omc_calc_auto,
-                "color": COLOURS[6],
-                "linestyle": "dotted",
-                "alpha": 0.9,
-                "avg_err": diff_auto.abs().mean(),
-            },
-        }
+            data_dict = {
+                "Zero Noise": {
+                    "x_data": rdt_dfs[noise]["zero"][rdt_str]["S"],
+                    "y_data": omc_calc_zero,
+                    "color": COLOURS[1],
+                    "linestyle": "solid",
+                    "alpha": 1.0,
+                },
+                # "Cleaned": {
+                #     "x_data": rdt_dfs[noise]["clean"][rdt_str]["S"],
+                #     "y_data": omc_calc_clean,
+                #     "color": COLOURS[2],
+                #     "linestyle": "dashed",
+                #     "alpha": 0.7,
+                #     "avg_err": diff_clean.abs().mean(),
+                # },
+                "Autoencoder Denoised": {
+                    "x_data": rdt_dfs[noise]["auto"][rdt_str]["S"],
+                    "y_data": omc_calc_auto,
+                    "color": COLOURS[6],
+                    "linestyle": "dotted",
+                    "alpha": 0.9,
+                    "avg_err": diff_auto.abs().mean(),
+                },
+            }
 
-        axs[i].set_title(f"Noise Level: {format_noise(noise)}")
-        for label, props in data_dict.items():
-            avg_err_label = (
-                f"\n(Avg err reduction: {diff.abs().mean() - props['avg_err']:.2%})"
-                if "avg_err" in props
-                else ""
-            )
-            axs[i].plot(
-                props["x_data"] / 1e3,
-                props["y_data"],
-                label=f"{label}{avg_err_label}",
-                color=props["color"],
-                linestyle=props["linestyle"],
-                alpha=props["alpha"],
-                marker="x" if label == "Autoencoder Denoised" else None,
-            )
-        if i == 0:
-            axs[i].set_ylabel("RDT Amplitude [$m^{-1/2}$]")
-        if i > 0:
-            axs[i].set_yticklabels([])
+            axs[i].set_title(f"Noise Level: {format_noise(noise)}")
+            for label, props in data_dict.items():
+                avg_err_label = ""
+                if "avg_err" in props: 
+                    if label == "Autoencoder Denoised":
+                        avg_err_label = f"\n(Avg err: {props['avg_err']:.2%}\nReduction in err: {diff.abs().mean() - props['avg_err']:.2%})"
+                    else:
+                        avg_err_label = f"\n(Reduction in Avg err: {diff.abs().mean() - props['avg_err']:.2%})"
+                axs[i].plot(
+                    props["x_data"] / 1e3,
+                    props["y_data"],
+                    label=f"{label}{avg_err_label}",
+                    color=props["color"],
+                    linestyle=props["linestyle"],
+                    alpha=props["alpha"],
+                    marker="x" if label == "Autoencoder Denoised" else None,
+                )
+            if i == 0:
+                if amp_or_phase == "AMP":
+                    axs[i].set_ylabel("RDT Amplitude [$m^{-1/2}$]")
+                else:
+                    axs[i].set_ylabel("RDT Phase")
+            if i > 0:
+                axs[i].set_yticklabels([])
 
-        if rdt_str == "f3000_x":
-            axs[i].set_ylim(10, 30)
-        elif rdt_str == "f1011_y":
-            axs[i].set_ylim(0, 70)
-        axs[i].set_xlabel("s [km]")
-        axs[i].legend()
+            if amp_or_phase == "AMP":
+                if rdt_str == "f3000_x":
+                    axs[i].set_ylim(10, 30)
+                elif rdt_str == "f1011_y":
+                    axs[i].set_ylim(0, 70)
+            axs[i].set_xlabel("s [km]")
+            axs[i].legend()
 
-    plt.tight_layout()
-    plt.savefig(
-        plot_dir / f"{rdt_str}_multi_noise.png",
-        dpi=300,
-        bbox_inches="tight",
-    )
-    plt.close()
+        plt.tight_layout()
+        plt.savefig(
+            plot_dir / f"{rdt_str}_multi_noise_{amp_or_phase}.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
+        plt.close()
 
 print("Script finished")

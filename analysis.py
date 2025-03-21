@@ -55,11 +55,12 @@ def process_tbt_data(noise):
     if noise == 0.0:
         return tbt_path_nonoise
 
-    tbt_file_noisy = tbt_path_nonoise.name.replace("zero_noise", f"{noise}")
+    tbt_file_noisy = tbt_path_nonoise.name.replace("zero_noise", "noisy")
     tbt_path_noisy = tbt_path_nonoise.parent / tbt_file_noisy
 
     clean_tbt = tbt.read_tbt(tbt_path_nonoise)
     tbt.write_tbt(tbt_path_noisy, clean_tbt, noise=noise)
+    print(f"Written tbt file to {tbt_path_noisy}")
 
     # Now get the clean path (by copying the noisy)
     tbt_file_clean = tbt_path_nonoise.name.replace("zero_noise", "harpy_cleaned")
@@ -68,5 +69,6 @@ def process_tbt_data(noise):
     if tbt_path_clean.exists():
         tbt_path_clean.unlink()
     shutil.copy(tbt_path_noisy, tbt_path_clean)
+    print(f"Written tbt file to {tbt_path_clean}")
 
     return tbt_path_noisy, tbt_path_clean

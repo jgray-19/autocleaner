@@ -7,7 +7,7 @@ from turn_by_turn.lhc import read_tbt
 
 from config import BEAM, DENOISED_INDEX, NBPMS, NTURNS, get_model_dir
 from dataloader import load_clean_data, write_data
-from ml_models.unet import UNetAutoencoderFixedDepthCheckpoint
+from pl_module import get_model
 
 
 def denoise_tbt(autoencoder_path: str, noisy_tbt_path: str) -> Path:
@@ -47,11 +47,11 @@ def denoise_tbt(autoencoder_path: str, noisy_tbt_path: str) -> Path:
     norm_y = 2 * (y_data - min_y) / (max_y - min_y) - 1
 
     # Convert from shape (NBPMS, NTURNS) to (1, 1, NBPMS, NTURNS)
-    noisy_norm_x = norm_x.unsqueeze(0).unsqueeze(0)
-    noisy_norm_y = norm_y.unsqueeze(0).unsqueeze(0)
+    noisy_norm_x = torch.tensor(norm_x, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+    noisy_norm_y = torch.tensor(norm_y, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
 
     # --- Load the autoencoder model ---
-    model = UNetAutoencoderFixedDepthCheckpoint()
+    model = get_model()
 
     state_dict = torch.load(autoencoder_path, map_location=torch.device("cpu"))
     model.load_state_dict(state_dict)

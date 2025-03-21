@@ -34,7 +34,7 @@ def get_tbt_path(beam: int, nturns: int, index: int) -> Path:
 BEAM = 1
 NUM_FILES = 200
 LOAD_MODEL = False
-RESUME_FROM_CKPT = False
+RESUME_FROM_CKPT = True
 if RESUME_FROM_CKPT:
     # CONFIG_NAME = "2025-03-12_10-35-48" # First Long training with ideal
     # CONFIG_NAME = "2025-03-13_09-39-18" # Added mse to the loss (comb_ssp instead of ssp)
@@ -45,18 +45,24 @@ if RESUME_FROM_CKPT:
     # CONFIG_NAME = "2025-03-17_16-31-06"  # Above but 100 um
     # CONFIG_NAME = "2025-03-18_17-07-40" # Above but now doing many noises on updated thing
     # CONFIG_NAME = "2025-03-19_22-46-55" # Above but tenth the initial learning rate. Also split x and y.
-    CONFIG_NAME = "2025-03-20_09-13-50" # Above but half same noise and 8 base channels
+    # CONFIG_NAME = "2025-03-20_09-13-50" # Above but half same noise and 8 base channels
+    
+    # CONFIG_NAME = '2025-03-20_15-37-57' # See config
+    # CONFIG_NAME = '2025-03-20_15-40-29' # Above but residuals 
+    # CONFIG_NAME = '2025-03-20_20-56-06' # 24 base channels, 5 batch size and lower learning rate
 
+    CONFIG_NAME = '2025-03-21_09-20-38'
 else:
     CONFIG_NAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 # Data Settings
 NBPMS = 563
-TOTAL_TURNS = 1500  # Total turns in the simulated data file
-NTURNS = 1000  # Training window length
-BATCH_SIZE = 25
+TOTAL_TURNS = 3000  # Total turns in the simulated data file
+NTURNS = 1500  # Training window length
+BATCH_SIZE = 4
+ACCUMULATE_BATCHES = 10
 TRAIN_RATIO = 0.8
-NUM_SAME_NOISE = 2
+NUM_SAME_NOISE = 1
 NUM_SAME_OFFSET = 1
 
 MODEL_SAVE_PATH = "conv_autoencoder.pth"
@@ -68,11 +74,11 @@ NLOGSTEPS = max(floor(TRAIN_RATIO * NUM_FILES / BATCH_SIZE), 1)
 NUM_CHANNELS = 1
 
 # Optimisation Settings
-NUM_EPOCHS = 32
-BOTTLENECK_SIZE = 16
-BASE_CHANNELS = 8
-LEARNING_RATE = 5e-4
-WEIGHT_DECAY = 1e-4
+NUM_EPOCHS = 5000
+BOTTLENECK_SIZE = 4
+BASE_CHANNELS = 12
+LEARNING_RATE = 1e-3
+WEIGHT_DECAY = 1e-5
 
 ALPHA = 0.5
 
@@ -81,18 +87,19 @@ SAMPLE_INDEX = "noisy"
 NONOISE_INDEX = "zero_noise"
 
 # NOISE_FACTORS = [1e-3, 9e-4, 8e-4, 7e-4, 6e-4, 5e-4, 4e-4, 3e-4, 2e-4, 1e-4, 5e-5]
-# NOISE_FACTORS = [1e-3, 5e-4, 1e-4, 5e-5]
-NOISE_FACTORS = [5e-4, 1e-4]
+NOISE_FACTORS = [1e-3, 5e-4, 1e-4, 5e-5]
+# NOISE_FACTORS = [5e-4, 1e-4]
+
 
 # MODEL_TYPE = "leaky"
-MODEL_TYPE = "unet_fixed_checkpoint"
+MODEL_TYPE = "unet_fixed"
 MODEL_DEPTH = 4
 RESIDUALS = False
 
 LOSS_TYPE = "comb_ssp"
 # LOSS_TYPE = "mse"
-SCHEDULER = False
-MIN_LR = 1e-6
+SCHEDULER = True
+MIN_LR = 1e-5
 INIT = "xavier"
 DATA_SCALING = "minmax"
 USE_OFFSETS = True
@@ -104,8 +111,9 @@ experiment_config = {
     "nbpms": NBPMS,
     "nturns": NTURNS,
     "total_turns": TOTAL_TURNS,
-    "num_same_noise": NUM_SAME_NOISE,
+    # "num_same_noise": NUM_SAME_NOISE,
     "batch_size": BATCH_SIZE,
+    "accumulate_batches": ACCUMULATE_BATCHES,
     "train_ratio": TRAIN_RATIO,
     # "num_planes": NUM_PLANES,
     "num_channels": NUM_CHANNELS,

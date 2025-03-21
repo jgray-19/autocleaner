@@ -225,7 +225,7 @@ def plot_tbt_difference(sample_dict, bpm_index, filename):
                 alpha=props["alpha"],
             )
         axs[i].set_xlabel("Turns")
-        axs[i].set_ylabel("$\delta$Amplitude [mm]")
+        axs[i].set_ylabel("$\delta$ Amplitude [mm]")
         axs[i].set_title(f"{plane} Plane")
         axs[i].legend()
         axs[i].grid(True, linestyle="--", alpha=0.6)

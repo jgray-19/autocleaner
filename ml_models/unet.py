@@ -96,7 +96,7 @@ class UNetAutoencoder(nn.Module):
 class UNetAutoencoderFixedDepth(nn.Module):
     def __init__(self, in_channels=NUM_CHANNELS, base_channels=BASE_CHANNELS):
         """
-        A U-Net–style autoencoder with fixed depth 4.
+        A U-Net-style autoencoder with fixed depth 4.
         
         Design rationale:
           • Fully convolutional: preserves spatial structure (critical for preserving phase and frequency).

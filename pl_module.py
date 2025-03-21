@@ -5,8 +5,22 @@ import pytorch_lightning as pl
 import torch
 import torch.optim as optim
 
-from config import ALPHA, MIN_LR, NUM_EPOCHS, RESIDUALS, SCHEDULER
+from config import ALPHA, MIN_LR, MODEL_TYPE, NUM_EPOCHS, RESIDUALS, SCHEDULER
 from losses import CombinedCorrelationLoss, CorrelationLoss, SSPLoss, fft_loss_per_bpm
+from ml_models.conv_2d import (
+    Conv2DAutoencoder,
+    Conv2DAutoencoderLeaky,
+    Conv2DAutoencoderLeakyFourier,
+    Conv2DAutoencoderLeakyNoFC,
+    DeepConvAutoencoder,
+    SineConv2DAutoencoder,
+)
+from ml_models.fno import FNO2d
+from ml_models.unet import (
+    UNetAutoencoder,
+    UNetAutoencoderFixedDepth,
+    UNetAutoencoderFixedDepthCheckpoint,
+)
 
 
 class LitAutoencoder(pl.LightningModule):
@@ -46,56 +60,35 @@ class LitAutoencoder(pl.LightningModule):
     def forward(self, x):
         return self.model(x)
 
-    def training_step(self, batch, batch_idx):
-        noisy_signal_x = batch["noisy_x"]  # shape (B, 1, NBPMS, NTURNS)
-        noisy_signal_y = batch["noisy_y"]  # shape (B, 1, NBPMS, NTURNS)
+    def get_batch_loss(self, batch):
+        # Concatenate along batch dimension (assuming shape (B, 1, NBPMS, NTURNS))
+        combined_noisy = torch.cat([batch["noisy_x"], batch["noisy_y"]], dim=0)
+        combined_clean = torch.cat([batch["clean_x"], batch["clean_y"]], dim=0)
+        combined_batch_size = combined_noisy.size(0)
 
-        # Process each channel through the model
-        recon_x = self(noisy_signal_x)
-        recon_y = self(noisy_signal_y)
+        # Optionally shuffle the combined batch here (if your DataLoader doesn’t already shuffle individual samples)
+        perm = torch.randperm(combined_batch_size)
+        combined_noisy = combined_noisy[perm]
+        combined_clean = combined_clean[perm]
 
-        # Similarly, split the clean data
-        clean_x = batch["clean_x"]
-        clean_y = batch["clean_y"]
+        # Process through the model
+        combined_recon = self(combined_noisy)
 
-        # Compute loss for each channel and average them
         if RESIDUALS:
-            loss_x = self.loss_fn(noisy_signal_x - recon_x, clean_x)
-            loss_y = self.loss_fn(noisy_signal_y - recon_y, clean_y)
+            loss = self.loss_fn(combined_noisy - combined_recon, combined_clean)
         else:
-            loss_x = self.loss_fn(recon_x, clean_x)
-            loss_y = self.loss_fn(recon_y, clean_y)
-        loss = (loss_x + loss_y) / 2.0
+            loss = self.loss_fn(combined_recon, combined_clean)
 
-        self.log("train_loss", loss, batch_size=batch["noisy_x"].size(0))
-        # self.log("train_loss_x", loss_x, batch_size=batch["noisy"].size(0))
-        # self.log("train_loss_y", loss_y, batch_size=batch["noisy"].size(0))
+        return loss, combined_batch_size
+
+    def training_step(self, batch, batch_idx):
+        loss, combined_batch_size = self.get_batch_loss(batch)
+        self.log("train_loss", loss, batch_size=combined_batch_size)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        noisy_signal_x = batch["noisy_x"]  # shape (B, 1, NBPMS, NTURNS)
-        noisy_signal_y = batch["noisy_y"]  # shape (B, 1, NBPMS, NTURNS)
-
-        # Process each channel through the model
-        recon_x = self(noisy_signal_x)
-        recon_y = self(noisy_signal_y)
-
-        # Similarly, split the clean data
-        clean_x = batch["clean_x"]
-        clean_y = batch["clean_y"]
-
-        # Compute loss for each channel and average them
-        if RESIDUALS:
-            loss_x = self.loss_fn(noisy_signal_x - recon_x, clean_x)
-            loss_y = self.loss_fn(noisy_signal_y - recon_y, clean_y)
-        else:
-            loss_x = self.loss_fn(recon_x, clean_x)
-            loss_y = self.loss_fn(recon_y, clean_y)
-        loss = (loss_x + loss_y) / 2.0
-
-        self.log("val_loss", loss, batch_size=batch["noisy_x"].size(0))
-        # self.log("val_loss_x", loss_x, batch_size=batch["noisy"].size(0))
-        # self.log("val_loss_y", loss_y, batch_size=batch["noisy"].size(0))
+        loss, combined_batch_size = self.get_batch_loss(batch)
+        self.log("val_loss", loss, batch_size=combined_batch_size)
         return loss
 
     def configure_optimizers(self):
@@ -118,3 +111,30 @@ def find_newest_file(directory_path):
 
     # Find the newest file
     return max(files, key=os.path.getctime)
+
+
+def get_model():
+    # Initialize or Load Model
+    if MODEL_TYPE == "sine":
+        return SineConv2DAutoencoder()
+    elif MODEL_TYPE == "conv":
+        return Conv2DAutoencoder()
+    elif MODEL_TYPE == "leaky":
+        return Conv2DAutoencoderLeaky()
+    elif MODEL_TYPE == "nofc":
+        return Conv2DAutoencoderLeakyNoFC()
+    elif MODEL_TYPE == "fourier":
+        return Conv2DAutoencoderLeakyFourier()
+    elif MODEL_TYPE == "deep":
+        return DeepConvAutoencoder()
+    elif MODEL_TYPE == "unet":
+        return UNetAutoencoder()
+    elif MODEL_TYPE == "unet_fixed":
+        return UNetAutoencoderFixedDepth()
+    elif MODEL_TYPE == "unet_fixed_checkpoint":
+        return UNetAutoencoderFixedDepthCheckpoint()
+    elif MODEL_TYPE == "fno":
+        return FNO2d()
+    else:
+        raise ValueError(f"Unknown model type: {MODEL_TYPE}")
+

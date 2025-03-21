@@ -12,13 +12,13 @@ from pytorch_lightning.loggers import TensorBoardLogger
 
 # Import configurations and utilities
 from config import (
+    ACCUMULATE_BATCHES,
     CONFIG_NAME,
     # DENOISED_INDEX,
     LEARNING_RATE,
     LOAD_MODEL,
     LOSS_TYPE,
     MODEL_SAVE_PATH,
-    MODEL_TYPE,
     NUM_EPOCHS,
     PLOT_DIR,
     # SAMPLE_INDEX,
@@ -33,27 +33,15 @@ from config import (
     RESIDUALS,
 )
 from dataloader import build_sample_dict, load_data#, write_data
-from ml_models.conv_2d import (
-    Conv2DAutoencoder,
-    Conv2DAutoencoderLeaky,
-    SineConv2DAutoencoder,
-    Conv2DAutoencoderLeakyNoFC,
-    Conv2DAutoencoderLeakyFourier,
-    DeepConvAutoencoder,
-)
-from ml_models.fno import FNO2d
-from ml_models.unet import (
-    UNetAutoencoder,
-    UNetAutoencoderFixedDepth,
-    UNetAutoencoderFixedDepthCheckpoint,
-)
-from pl_module import LitAutoencoder, find_newest_file
+
+from pl_module import LitAutoencoder, find_newest_file, get_model
 from visualisation import (
     plot_data_distribution,
     plot_denoised_data,
     plot_noisy_data,
     # plot_model_architecture,
 )
+# export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 assert __name__ == "__main__", "This script is not meant to be imported."
 print_config()
@@ -76,29 +64,7 @@ print(f"Data loaded. Took {time.time() - b4_load:.2f} seconds.")
 # plot_data_distribution(batch["clean"], "Clean Data Distribution")
 # plot_noisy_data(batch["noisy"][0, 0, :, :], batch["clean"][0, 0, :, :], 111)
 
-# Initialize or Load Model
-if MODEL_TYPE == "sine":
-    model = SineConv2DAutoencoder()
-elif MODEL_TYPE == "conv":
-    model = Conv2DAutoencoder()
-elif MODEL_TYPE == "leaky":
-    model = Conv2DAutoencoderLeaky()
-elif MODEL_TYPE == "nofc":
-    model = Conv2DAutoencoderLeakyNoFC()
-elif MODEL_TYPE == "fourier":
-    model = Conv2DAutoencoderLeakyFourier()
-elif MODEL_TYPE == "deep":
-    model = DeepConvAutoencoder()
-elif MODEL_TYPE == "unet":
-    model = UNetAutoencoder()
-elif MODEL_TYPE == "unet_fixed":
-    model = UNetAutoencoderFixedDepth()
-elif MODEL_TYPE == "unet_fixed_checkpoint":
-    model = UNetAutoencoderFixedDepthCheckpoint()
-elif MODEL_TYPE == "fno":
-    model = FNO2d()
-else:
-    raise ValueError(f"Unknown model type: {MODEL_TYPE}")
+model = get_model()
 
 if LOAD_MODEL and os.path.exists(MODEL_SAVE_PATH):
     model.load_state_dict(torch.load(MODEL_SAVE_PATH))
@@ -122,8 +88,10 @@ else:
     if not RESUME_FROM_CKPT:
         save_experiment_config(log_dir)
 
+    # torch.cuda.empty_cache()
     b4_train = time.time()
     trainer = pl.Trainer(
+        accumulate_grad_batches=ACCUMULATE_BATCHES,
         max_epochs=NUM_EPOCHS,
         log_every_n_steps=NLOGSTEPS,
         default_root_dir=root_dir,  # Set the logging path

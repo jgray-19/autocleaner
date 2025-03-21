@@ -17,7 +17,6 @@ from config import (
     NOISE_FACTORS,
     NTURNS,
     NUM_FILES,
-    NUM_SAME_NOISE,
     NUM_SAME_OFFSET,
     SEED,
     TOTAL_TURNS,
@@ -147,8 +146,7 @@ class BPMSDataset(Dataset):
         clean_slice_norm_y = self.norm_clean_y[:, :, start_idx:end_idx]
 
         # Determine the noise factor deterministically.
-        noise_idx = idx // NUM_SAME_NOISE
-        factor_idx = noise_idx % len(self.noise_factors)
+        factor_idx = idx % len(self.noise_factors)
         noise_factor = self.noise_factors[factor_idx]
 
         # Retrieve the pre-stored RNG for this sample.
