@@ -5,14 +5,9 @@ import tfs
 import turn_by_turn as tbt
 from turn_by_turn import madng
 
-from rdt_functions import (
-    create_model_dir,
-    get_model_dir,
-    get_tbt_path,
-    run_tracking,
-    update_model_with_ng,
-    get_tfs_path,
-)
+from lhcng.model import create_model_dir, get_model_dir
+from lhcng.tracking import run_tracking, get_tfs_path, get_tbt_path
+from config import NONOISE_INDEX
 
 BEAM = 1
 create_model = False
@@ -25,11 +20,10 @@ random.seed(42)
 model_dir = get_model_dir(BEAM)
 if create_model or not model_dir.exists():
     create_model_dir(BEAM)
-    update_model_with_ng(BEAM)
 
 # Get the TFS and TBT paths
 tfs_path = get_tfs_path(BEAM, nturns)
-tbt_file = get_tbt_path(beam=BEAM, nturns=nturns, index=-1)
+tbt_file = get_tbt_path(beam=BEAM, nturns=nturns, index=NONOISE_INDEX)
 
 # Run the tracking
 print("Running MAD-NG Tracking")

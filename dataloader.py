@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import tfs
 import torch
+from lhcng.model import get_model_dir
+from lhcng.tracking import get_tbt_path
 from sklearn.preprocessing import QuantileTransformer
 from torch.utils.data import DataLoader, Dataset
 from turn_by_turn import TbtData, TransverseData
@@ -12,7 +14,6 @@ from turn_by_turn.lhc import read_tbt, write_tbt
 from config import (
     BATCH_SIZE,
     BEAM,
-    DATA_SCALING,
     NBPMS,
     NOISE_FACTORS,
     NTURNS,
@@ -22,8 +23,6 @@ from config import (
     TOTAL_TURNS,
     TRAIN_RATIO,
     USE_OFFSETS,
-    get_model_dir,
-    get_tbt_path,
 )
 
 
