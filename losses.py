@@ -163,13 +163,22 @@ class SSPLoss(nn.Module):
         """
         p = pred.squeeze(1)  # shape: (B, H, W)
         t = target.squeeze(1)
-        # Compute 2D FFTs vectorized over the batch.
-        p_fft = torch.fft.rfft2(p, norm="ortho")
-        t_fft = torch.fft.rfft2(t, norm="ortho")
+
+        # Compute next power-of-two sizes for H and W
+        def next_power_of_two(x: int) -> int:
+            return 1 << (x - 1).bit_length()
+
+        new_H = next_power_of_two(p.size(1))
+        new_W = next_power_of_two(p.size(2))
+
+        # Compute 2D FFTs with automatic zero-padding to power-of-two dimensions.
+        p_fft = torch.fft.rfft2(p, s=(new_H, new_W), norm="ortho")
+        t_fft = torch.fft.rfft2(t, s=(new_H, new_W), norm="ortho")
+
         # Compute L2 norm differences per sample.
         diff = p_fft - t_fft
-        diff_l2 = torch.norm(diff, dim=(1,2))
-        p_l2 = torch.norm(p_fft, dim=(1,2))
-        t_l2 = torch.norm(t_fft, dim=(1,2))
+        diff_l2 = torch.norm(diff, dim=(1, 2))
+        p_l2 = torch.norm(p_fft, dim=(1, 2))
+        t_l2 = torch.norm(t_fft, dim=(1, 2))
         ssp = diff_l2 / (p_l2 + t_l2 + self.eps)
         return ssp.mean()

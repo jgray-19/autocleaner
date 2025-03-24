@@ -59,9 +59,11 @@ else:
 NBPMS = 563
 TOTAL_TURNS = 3000  # Total turns in the simulated data file
 NTURNS = 1500  # Training window length
+
 BATCH_SIZE = 4
 ACCUMULATE_BATCHES = 10
 TRAIN_RATIO = 0.8
+
 NUM_SAME_NOISE = 1
 NUM_SAME_OFFSET = 1
 
@@ -72,11 +74,12 @@ NLOGSTEPS = max(floor(TRAIN_RATIO * NUM_FILES / BATCH_SIZE), 1)
 
 # NUM_PLANES = 2
 NUM_CHANNELS = 1
+PRECISION = "16-mixed"
 
-# Optimisation Settings
 NUM_EPOCHS = 5000
 BOTTLENECK_SIZE = 4
 BASE_CHANNELS = 12
+
 LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-5
 
@@ -100,6 +103,7 @@ LOSS_TYPE = "comb_ssp"
 # LOSS_TYPE = "mse"
 SCHEDULER = True
 MIN_LR = 1e-5
+
 INIT = "xavier"
 DATA_SCALING = "minmax"
 USE_OFFSETS = True
@@ -125,6 +129,7 @@ experiment_config = {
     "model_type": MODEL_TYPE,
     "loss_type": LOSS_TYPE,
     # "fft_weight": FFT_WEIGHT,
+    "precision": PRECISION,
     "scheduler": SCHEDULER,
     "data_scaling": DATA_SCALING,
     "use_offsets": USE_OFFSETS,
