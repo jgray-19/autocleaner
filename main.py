@@ -5,8 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytorch_lightning as pl
 import torch
-
-# import hiddenlayer as hl
+from lhcng.config import PLOT_DIR
 from matplotlib import pyplot as plt
 from pytorch_lightning.loggers import TensorBoardLogger
 
@@ -14,34 +13,25 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from config import (
     ACCUMULATE_BATCHES,
     CONFIG_NAME,
-    # DENOISED_INDEX,
     LEARNING_RATE,
     LOAD_MODEL,
     LOSS_TYPE,
     MODEL_SAVE_PATH,
+    NLOGSTEPS,
     NUM_EPOCHS,
-    PLOT_DIR,
-    # SAMPLE_INDEX,
+    RESIDUALS,
+    RESUME_FROM_CKPT,
     WEIGHT_DECAY,
     print_config,
     save_experiment_config,
-    NLOGSTEPS,
-    # NTURNS,
-    # NBPMS,
-    # NUM_PLANES,
-    RESUME_FROM_CKPT,
-    RESIDUALS,
 )
-from dataloader import build_sample_dict, load_data#, write_data
-
+from dataloader import build_sample_dict, load_data  #, write_data
 from pl_module import LitAutoencoder, find_newest_file, get_model
 from visualisation import (
     plot_data_distribution,
     plot_denoised_data,
     plot_noisy_data,
-    # plot_model_architecture,
 )
-# export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 assert __name__ == "__main__", "This script is not meant to be imported."
 print_config()
