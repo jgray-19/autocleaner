@@ -5,24 +5,31 @@ import tfs
 import torch
 from turn_by_turn.lhc import read_tbt
 
-from config import BEAM, DENOISED_INDEX, NBPMS, NTURNS, get_model_dir
+from config import DENOISED_INDEX, NBPMS, NTURNS
+from lhcng.model import get_model_dir
+from lhcng.tracking import get_tbt_path
 from dataloader import load_clean_data, write_data
 from pl_module import get_model
 
 
-def denoise_tbt(autoencoder_path: str, noisy_tbt_path: str) -> Path:
+def denoise_tbt(
+    autoencoder_path: Path,
+    noisy_tbt_path: Path,
+    model_dir: Path,
+    denoised_tbt_path: Path,
+) -> Path:
     """
     Denoise a turn-by-turn file using a saved autoencoder.
 
     Args:
-        autoencoder_path (str): Path to the saved autoencoder state_dict.
-        noisy_tbt_path (str): Path to the turn-by-turn file to be cleaned.
+        autoencoder_path (Path|str): Path to the saved autoencoder state_dict.
+        noisy_tbt_path (Path|str): Path to the turn-by-turn file to be cleaned.
 
     Returns:
-        str: The file path of the cleaned turn-by-turn file.
+        Path: The file path of the cleaned turn-by-turn file.
     """
     # Load beta functions from the twiss file (same as in load_clean_data)
-    model_dat = tfs.read(get_model_dir(BEAM) / "twiss.dat")
+    model_dat = tfs.read(model_dir / "twiss.dat")
     sqrt_betax = np.sqrt(model_dat["BETX"].values)
     sqrt_betay = np.sqrt(model_dat["BETY"].values)
 
@@ -61,16 +68,15 @@ def denoise_tbt(autoencoder_path: str, noisy_tbt_path: str) -> Path:
     with torch.no_grad():
         recon_x = model(noisy_norm_x)
         recon_y = model(noisy_norm_y)
-    
+
     # -- Remove the batch dimension --
     recon_x = recon_x.squeeze(0).squeeze(0).detach().cpu().numpy()
     recon_y = recon_y.squeeze(0).squeeze(0).detach().cpu().numpy()
-
 
     # --- Inverse minmax scaling ---
     recon_x = (recon_x + 1) / 2 * (max_x - min_x) + min_x
     recon_y = (recon_y + 1) / 2 * (max_y - min_y) + min_y
 
     # --- Write the cleaned data ---
-    cleaned_file_path, _ = write_data(recon_x, recon_y, noise_index=DENOISED_INDEX)
+    cleaned_file_path, _ = write_data(recon_x, recon_y, model_dir, denoised_tbt_path)
     return cleaned_file_path

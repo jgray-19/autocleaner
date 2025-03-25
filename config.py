@@ -2,50 +2,50 @@ import json
 import os
 from datetime import datetime
 from math import floor
-from lhcng.model import get_model_dir
 from generic_parser.tools import DotDict
 
 # General Settings
-BEAM = 1
-NUM_FILES = 200
+NUM_NOISY_PER_CLEAN = 200
 LOAD_MODEL = False
 RESUME_FROM_CKPT = True
 if RESUME_FROM_CKPT:
-    # CONFIG_NAME = "2025-03-12_10-35-48" # First Long training with ideal
-    # CONFIG_NAME = "2025-03-13_09-39-18" # Added mse to the loss (comb_ssp instead of ssp)
-    # CONFIG_NAME = "2025-03-13_13-50-14" # Residuals
-    # CONFIG_NAME = "2025-03-13_14-08-38" # Residuals but better
-    # CONFIG_NAME = "2025-03-13_18-21-08" # back to 2 but more files, more base channels, more files, smaller batches
-    # CONFIG_NAME = "2025-03-17_09-47-23" # Fixed noise level, noise with beta functions 10 um.
-    # CONFIG_NAME = "2025-03-17_16-31-06"  # Above but 100 um
-    # CONFIG_NAME = "2025-03-18_17-07-40" # Above but now doing many noises on updated thing
-    # CONFIG_NAME = "2025-03-19_22-46-55" # Above but tenth the initial learning rate. Also split x and y.
-    # CONFIG_NAME = "2025-03-20_09-13-50" # Above but half same noise and 8 base channels
-    
-    # CONFIG_NAME = '2025-03-20_15-37-57' # See config
-    # CONFIG_NAME = '2025-03-20_15-40-29' # Above but residuals 
-    # CONFIG_NAME = '2025-03-20_20-56-06' # 24 base channels, 5 batch size and lower learning rate
-
-    CONFIG_NAME = '2025-03-21_09-20-38'
+    CONFIG_NAME = "2025-03-21_09-20-38"
 else:
     CONFIG_NAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 # Data Settings
 NBPMS = 563
-TOTAL_TURNS = 3000  # Total turns in the simulated data file
+TOTAL_TURNS = 2000  # Total turns in the simulated data file
 NTURNS = 1500  # Training window length
+
+# Various Clean Data Settings
+TUNE_LIST = [
+    [0.19, 0.18],
+    [0.28, 0.29],
+    [0.31, 0.32],
+    [0.43, 0.49],
+]
+COUPLING = [False, 1e-4, 1e-3]
+BEAMS = [1, 2]
+CLEAN_PARAM_LIST = []
+for beam in BEAMS:
+    for tunes in TUNE_LIST:
+        for coupling in COUPLING:
+            CLEAN_PARAM_LIST.append(
+                {
+                    "beam": beam,
+                    "tunes": tunes,
+                    "coupling": coupling,
+                }
+            )
+
 
 BATCH_SIZE = 4
 ACCUMULATE_BATCHES = 10
 TRAIN_RATIO = 0.8
 
-NUM_SAME_NOISE = 1
-NUM_SAME_OFFSET = 1
-
 MODEL_SAVE_PATH = "conv_autoencoder.pth"
-MODEL_DIR = get_model_dir(beam=BEAM)
-
-NLOGSTEPS = max(floor(TRAIN_RATIO * NUM_FILES / BATCH_SIZE), 1)
+NLOGSTEPS = max(floor(TRAIN_RATIO * NUM_NOISY_PER_CLEAN / BATCH_SIZE), 1)
 
 # NUM_PLANES = 2
 NUM_CHANNELS = 1
@@ -81,45 +81,36 @@ MIN_LR = 1e-5
 
 INIT = "xavier"
 DATA_SCALING = "minmax"
-USE_OFFSETS = True
 
 experiment_config = {
-    "beam": BEAM,
-    "num_files": NUM_FILES,
-    "load_model": LOAD_MODEL,
-    "nbpms": NBPMS,
-    "nturns": NTURNS,
-    "total_turns": TOTAL_TURNS,
-    # "num_same_noise": NUM_SAME_NOISE,
-    "batch_size": BATCH_SIZE,
     "accumulate_batches": ACCUMULATE_BATCHES,
-    "train_ratio": TRAIN_RATIO,
-    # "num_planes": NUM_PLANES,
+    "alpha": ALPHA if LOSS_TYPE in ["fft", "combined"] else None,
+    "base_channels": BASE_CHANNELS,
+    "batch_size": BATCH_SIZE,
+    "beams": BEAMS,
+    "bottleneck_size": BOTTLENECK_SIZE if MODEL_TYPE != "deep" else None,
+    "coupling": COUPLING,
+    "data_scaling": DATA_SCALING,
+    "depth": MODEL_DEPTH if MODEL_TYPE in ["unet", "fno"] else None,
+    "learning_rate": LEARNING_RATE,
+    "load_model": LOAD_MODEL,
+    "loss_type": LOSS_TYPE,
+    "min_lr": MIN_LR if SCHEDULER else None,
+    "nbpms": NBPMS,
+    "noise_factor": NOISE_FACTORS,
     "num_channels": NUM_CHANNELS,
     "num_epochs": NUM_EPOCHS,
-    "base_channels": BASE_CHANNELS,
-    "learning_rate": LEARNING_RATE,
-    "weight_decay": WEIGHT_DECAY,
-    "noise_factor": NOISE_FACTORS,
-    "model_type": MODEL_TYPE,
-    "loss_type": LOSS_TYPE,
-    # "fft_weight": FFT_WEIGHT,
+    "num_files": NUM_NOISY_PER_CLEAN,
     "precision": PRECISION,
-    "scheduler": SCHEDULER,
-    "data_scaling": DATA_SCALING,
-    "use_offsets": USE_OFFSETS,
     "residuals": RESIDUALS,
+    "scheduler": SCHEDULER,
+    "tune_list": TUNE_LIST,
+    "total_turns": TOTAL_TURNS,
+    "train_ratio": TRAIN_RATIO,
+    "weight_decay": WEIGHT_DECAY,
 }
-if MODEL_TYPE != "deep":
-    experiment_config["bottleneck_size"] = BOTTLENECK_SIZE
-if MODEL_TYPE == "unet" or MODEL_TYPE == "fno":
-    experiment_config["depth"] = MODEL_DEPTH
-
-if LOSS_TYPE == "fft" or LOSS_TYPE == "combined":
-    experiment_config["alpha"] = ALPHA
-if SCHEDULER:
-    experiment_config["min_lr"] = MIN_LR
-
+# Remove None values from the dictionary
+experiment_config = {k: v for k, v in experiment_config.items() if v is not None}
 
 HARPY_INPUT = DotDict(
     {

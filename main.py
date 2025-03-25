@@ -127,6 +127,7 @@ sample = {
     "recon_y": recon_y[0, 0, ...].numpy(),
     "clean_x": batch["clean_x"][0, 0, ...].numpy(),
     "clean_y": batch["clean_y"][0, 0, ...].numpy(),
+    "norm_info": batch["norm_info"][0],
 }
 
 sample_dict = build_sample_dict(sample, dataset)
