@@ -87,6 +87,31 @@ def write_data(
     write_tbt(tbt_path, out_data)
     return tbt_path, out_data
 
+def cyclic_slice_bpm_turns(raw_tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Given a tensor of shape (NBPMS, TOTAL_TURNS), this function performs a cyclic
+    permutation of the data to create a window of NTURNS turns, starting from turn 0.
+    The output tensor will have shape (NBPMS, NTURNS).
+    """
+    # Flatten in column-major order.
+    # Transpose so that rows are turns: shape (TOTAL_TURNS, NBPMS).
+    transposed = raw_tensor.t()
+    # Flattening now produces a vector where each turn's BPMs are contiguous.
+    flat = transposed.reshape(-1)
+
+    # Step 3: Choose one random offset (covering both BPM and turn offsets) and roll.
+    offset = np.random.randint(0, (TOTAL_TURNS - NTURNS) * NBPMS-1)
+    flat_shifted = torch.roll(flat, shifts=-offset)
+
+    # Step 4: Reshape back and transpose so that the output is (NBPMS, window_length).
+    # The flat vector is reshaped into (window_length, NBPMS) then transposed.
+    shifted = flat_shifted.reshape(TOTAL_TURNS, -1).t()
+    
+    # We only want the first NTURNS turns.
+    shifted = shifted[:, :NTURNS]
+    return shifted
+
+
 
 class BPMSDataset(Dataset):
     """
@@ -150,9 +175,6 @@ class BPMSDataset(Dataset):
 
         # Precompute random indices, offsets, noise
         self.clean_indices = np.random.randint(0, self.num_clean, size=self.total_files)
-        self.offsets = np.random.randint(
-            0, TOTAL_TURNS - NTURNS + 1, size=self.total_files
-        )
         self.noise_factors = np.random.choice(
             noise_factors, size=self.total_files, replace=True
         )
@@ -167,45 +189,35 @@ class BPMSDataset(Dataset):
         return self.total_files
 
     def __getitem__(self, idx):
-        # 1) Identify which file we want
-        file_idx = self.clean_indices[idx]  # index into self.cached_clean_x
-        offset = self.offsets[idx]  # random offset for slicing
+        # Identify which file we want
+        file_idx = self.clean_indices[idx]
         noise_factor = self.noise_factors[idx] * self.current_noise_multiplier
 
-        # 2) Pull out the (NBPMS, TOTAL_TURNS) raw data from memory
+        # Pull out the raw (un-normalized) data from memory
         raw_x = self.cached_clean_x[file_idx]  # shape (NBPMS, TOTAL_TURNS)
         raw_y = self.cached_clean_y[file_idx]
 
-        # 3) Slice out (NBPMS, NTURNS)
-        slice_x = raw_x[:, offset : offset + NTURNS]
-        slice_y = raw_y[:, offset : offset + NTURNS]
+        # Extract a window of NTURNS starting at turn 0 and apply BPM cyclic permutation.
+        window_x = cyclic_slice_bpm_turns(raw_x)
+        window_y = cyclic_slice_bpm_turns(raw_y)
 
-        # 4) Normalize with the global stats
-        norm_slice_x = (
-            2.0
-            * (slice_x - self.global_min_x)
-            / (self.global_max_x - self.global_min_x)
-            - 1.0
-        )
-        norm_slice_y = (
-            2.0
-            * (slice_y - self.global_min_y)
-            / (self.global_max_y - self.global_min_y)
-            - 1.0
-        )
+        # Normalize using global min/max.
+        norm_slice_x = 2.0 * (window_x - self.global_min_x) / (self.global_max_x - self.global_min_x) - 1.0
+        norm_slice_y = 2.0 * (window_y - self.global_min_y) / (self.global_max_y - self.global_min_y) - 1.0
 
-        # 5) Add noise in normalized domain
+        # Add noise in normalized domain
         noise_x = torch.randn_like(norm_slice_x) * noise_factor
         noise_y = torch.randn_like(norm_slice_y) * noise_factor
         noisy_slice_x = norm_slice_x + noise_x
         noisy_slice_y = norm_slice_y + noise_y
 
-        # 6) Simulate missing BPMs by randomly zeroing out up to MISSING_PROB % of BPM channels.
+        # Missing BPM simulation
         mask = torch.rand(NBPMS) < MISSING_PROB
-        noisy_slice_x[mask, :] = 0  # Zero out selected BPM channels for X
-        noisy_slice_y[mask, :] = 0  # Zero out selected BPM channels for Y
+        noisy_slice_x[mask, :] = 0
+        noisy_slice_y[mask, :] = 0
 
-        # 7) Reshape if your model expects 4D: (B, C, NBPMS, NTURNS) and return
+        # Add the channel dimension
+        # The final shape of the tensors is (1, NBPMS, NTURNS)
         return {
             "clean_x": norm_slice_x.unsqueeze(0),
             "clean_y": norm_slice_y.unsqueeze(0),
