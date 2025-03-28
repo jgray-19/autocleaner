@@ -47,17 +47,21 @@ TUNE_LIST = [
     [0.69, 0.68],
 ]
 COUPLING = [False, 1e-4, 1e-3]
+KICK_AMPS = [5e-5, 1e-4, 5e-4]
+
 BEAMS = [1]
 CLEAN_PARAM_LIST = []
 for beam in BEAMS:
     for tunes in TUNE_LIST:
         for coupling in COUPLING:
-            CLEAN_PARAM_LIST.append(
-                {
-                    "beam": beam,
-                    "tunes": tunes,
-                    "coupling": coupling,
-                }
+            for kick_amp in KICK_AMPS:
+                CLEAN_PARAM_LIST.append(
+                    {
+                        "beam": beam,
+                        "tunes": tunes,
+                        "coupling": coupling,
+                        "kick_amp": kick_amp,
+                    }
             )
 NUM_PARAMS = len(CLEAN_PARAM_LIST)
 

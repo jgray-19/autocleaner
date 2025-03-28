@@ -115,6 +115,7 @@ class BPMSDataset(Dataset):
                 TOTAL_TURNS,
                 params["coupling"],
                 params["tunes"],
+                params["kick_amp"],
                 NONOISE_INDEX,
             )
             model_dir = get_model_dir(

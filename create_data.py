@@ -19,11 +19,23 @@ nturns = 2000
 random.seed(42)
 
 # Create a list of tunes for the fake measurement
+
+# x -> 0.26 to 0.32
+# y -> 0.26 to 0.32
 tune_list = [
+    # [0.07, 0.06],
     [0.19, 0.18],
+    [0.26, 0.27],
+    [0.27, 0.28],
     [0.28, 0.29],
+    [0.29, 0.31],
+    [0.32, 0.31],
     [0.31, 0.32],
     [0.43, 0.49],
+    [0.74, 0.73],
+    [0.72, 0.69],
+    [0.71, 0.68],
+    [0.69, 0.68],
 ]
 coupling = [
     False,
@@ -32,7 +44,13 @@ coupling = [
     # 3e-3,
 ]
 
-def delete_unwanted_files(beam, nturns, coupling_knob, tunes):
+kick_amps = [
+    5e-5,
+    1e-4,
+    5e-4,
+]
+
+def delete_unwanted_files(beam, nturns, coupling_knob, tunes, kick_amp):
     # Delete the TFS file using pathlib instead of os
     tfs_file = Path(get_tfs_path(beam, nturns, coupling_knob, tunes))
     if tfs_file.exists():
@@ -46,7 +64,7 @@ def delete_unwanted_files(beam, nturns, coupling_knob, tunes):
 
     # Delete the saved sequence files using Path.unlink()
     madx_seq = model_dir / f"lhcb{beam}_saved.seq"
-    mad_seq = model_dir / f"lhcb{beam}.mad"
+    mad_seq = model_dir / f"lhcb{beam}_saved.mad"
     if madx_seq.exists():
         madx_seq.unlink()
     if mad_seq.exists():
@@ -58,21 +76,22 @@ def delete_unwanted_files(beam, nturns, coupling_knob, tunes):
         shutil.rmtree(macros_dir)
 
 def process_configuration(args):
-    beam, tunes, cknob = args
+    beam, tunes, cknob, kick = args
     model_dir = get_model_dir(beam, cknob, tunes)
     create_model_dir(beam, nat_tunes=tunes, coupling_knob=cknob)
 
-    tfs_path = get_tfs_path(beam, nturns, coupling_knob=cknob, tunes=tunes)
+    tfs_path = get_tfs_path(beam, nturns, coupling_knob=cknob, tunes=tunes, kick_amp=kick)
     tbt_file = get_tbt_path(
         beam=beam,
         nturns=nturns,
         coupling_knob=cknob,
         tunes=tunes,
+        kick_amp=kick,
         index=NONOISE_INDEX,
     )
 
     print("Running MAD-NG Tracking")
-    tfs_data = run_tracking(beam, nturns, model_dir, tunes=tunes, kick_amp=1e-4)
+    tfs_data = run_tracking(beam, nturns, model_dir, tunes=tunes, kick_amp=kick)
 
     # Save the TFS data
     print("Saving TFS data")
@@ -89,10 +108,13 @@ def process_configuration(args):
 
 if __name__ == '__main__':
     configs = []
-    for beam in [1, 2]:
+    # for beam in [1, 2]:
+    for beam in [1]:
         for tunes in tune_list:
             for cknob in coupling:
-                configs.append((beam, tunes, cknob))
+                for kick in kick_amps:
+                    print(f"Processing beam {beam}, tunes {tunes}, coupling {cknob} kick {kick}")
+                    configs.append((beam, tunes, cknob, kick))
 
     with concurrent.futures.ProcessPoolExecutor() as executor:
         executor.map(process_configuration, configs)

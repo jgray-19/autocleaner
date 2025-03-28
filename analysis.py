@@ -27,10 +27,10 @@ def rdt_plots_dir(noise):
 
 
 def run_harpy_analysis(
-    beam, coupling_knob, tunes, index, rdts, clean=False, turn_bits=16
+    beam, coupling_knob, tunes, kick_amp, index, rdts, clean=False, turn_bits=16
 ):
     """Run Harpy and return both the RDT dataframes and the frequency/amplitude data."""
-    tbt_file = get_tbt_path(beam, NTURNS, coupling_knob, tunes, index=index)
+    tbt_file = get_tbt_path(beam, NTURNS, coupling_knob, kick_amp, tunes, index=index)
     model_dir = get_model_dir(beam, coupling_knob, tunes)
 
     print(f"Running Harpy for {tbt_file} (clean={clean})")
@@ -59,7 +59,7 @@ def run_harpy_analysis(
     return rdts_df, freq_amp
 
 
-def process_tbt_data(beam, coupling_knob, tunes, noise):
+def process_tbt_data(beam, coupling_knob, tunes, kick_amp, noise):
     assert beam in [1, 2], "Beam not 1 or 2"
 
     tbt_path_nonoise = get_tbt_path(
@@ -67,6 +67,7 @@ def process_tbt_data(beam, coupling_knob, tunes, noise):
         nturns=NTURNS,
         coupling_knob=coupling_knob,
         tunes=tunes,
+        kick_amp=kick_amp,
         index=NONOISE_INDEX,
     )
     if not tbt_path_nonoise.exists():
@@ -80,6 +81,7 @@ def process_tbt_data(beam, coupling_knob, tunes, noise):
         nturns=NTURNS,
         coupling_knob=coupling_knob,
         tunes=tunes,
+        kick_amp=kick_amp,
         index=SAMPLE_INDEX,
     )
 
@@ -93,6 +95,7 @@ def process_tbt_data(beam, coupling_knob, tunes, noise):
         nturns=NTURNS,
         coupling_knob=coupling_knob,
         tunes=tunes,
+        kick_amp=kick_amp,
         index=HARPY_CLEAN_INDEX,
     )
 
