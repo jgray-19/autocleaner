@@ -14,6 +14,7 @@ from turn_by_turn.lhc import read_tbt, write_tbt
 from config import (
     BATCH_SIZE,
     CLEAN_PARAM_LIST,
+    MISSING_PROB,
     NBPMS,
     NOISE_FACTORS,
     NONOISE_INDEX,
@@ -199,12 +200,17 @@ class BPMSDataset(Dataset):
         noisy_slice_x = norm_slice_x + noise_x
         noisy_slice_y = norm_slice_y + noise_y
 
-        # 6) Reshape if your model expects 4D: (B, C, NBPMS, NTURNS) and return
+        # 6) Simulate missing BPMs by randomly zeroing out up to MISSING_PROB % of BPM channels.
+        mask = torch.rand(NBPMS) < MISSING_PROB
+        noisy_slice_x[mask, :] = 0  # Zero out selected BPM channels for X
+        noisy_slice_y[mask, :] = 0  # Zero out selected BPM channels for Y
+
+        # 7) Reshape if your model expects 4D: (B, C, NBPMS, NTURNS) and return
         return {
-            "clean_x": norm_slice_x.unsqueeze(0).unsqueeze(0),
-            "clean_y": norm_slice_y.unsqueeze(0).unsqueeze(0),
-            "noisy_x": noisy_slice_x.unsqueeze(0).unsqueeze(0),
-            "noisy_y": noisy_slice_y.unsqueeze(0).unsqueeze(0),
+            "clean_x": norm_slice_x.unsqueeze(0),
+            "clean_y": norm_slice_y.unsqueeze(0),
+            "noisy_x": noisy_slice_x.unsqueeze(0),
+            "noisy_y": noisy_slice_y.unsqueeze(0),
         }
 
     def denormalise(

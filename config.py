@@ -106,6 +106,7 @@ MIN_LR = 1e-5
 
 INIT = "xavier"
 DATA_SCALING = "minmax"
+MISSING_PROB = 2e-2
 
 experiment_config = {
     "accumulate_batches": ACCUMULATE_BATCHES,
