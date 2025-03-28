@@ -1,7 +1,7 @@
 import shutil
 import tfs
 import turn_by_turn as tbt
-from config import BEAM, NONOISE_INDEX, NTURNS
+from config import NONOISE_INDEX, NTURNS, SAMPLE_INDEX, HARPY_CLEAN_INDEX
 from lhcng.config import (
     PLOT_DIR,
     ANALYSIS_DIR,
@@ -9,6 +9,7 @@ from lhcng.config import (
 )
 from lhcng.analysis import get_rdts_from_optics_analysis, run_harpy
 from lhcng.tracking import get_tbt_path
+from lhcng.model import get_model_dir
 
 def format_noise(noise):
     if noise >= 1e-3:
@@ -25,16 +26,29 @@ def rdt_plots_dir(noise):
     return d
 
 
-def run_harpy_analysis(tbt_file, rdts, clean=False, turn_bits=16):
+def run_harpy_analysis(
+    beam, coupling_knob, tunes, index, rdts, clean=False, turn_bits=16
+):
     """Run Harpy and return both the RDT dataframes and the frequency/amplitude data."""
+    tbt_file = get_tbt_path(beam, NTURNS, coupling_knob, tunes, index=index)
+    model_dir = get_model_dir(beam, coupling_knob, tunes)
+
     print(f"Running Harpy for {tbt_file} (clean={clean})")
-    run_harpy(beam=BEAM, tbt_file=tbt_file, clean=clean, turn_bits=turn_bits)
+    run_harpy(
+        beam=beam,
+        model_dir=model_dir,
+        tbt_file=tbt_file,
+        tunes=tunes,
+        clean=clean,
+        turn_bits=turn_bits,
+    )
     analysis_folder = ANALYSIS_DIR / tbt_file.stem
     analysis_folder.mkdir(exist_ok=True)
 
     rdts_df = get_rdts_from_optics_analysis(
-        beam=BEAM,
+        beam=beam,
         tbt_path=FREQ_OUT_DIR / tbt_file.name,
+        model_dir=model_dir,
     )
     # Load frequency/amplitude data for both X and Y planes
     freqx = tfs.read(FREQ_OUT_DIR / f"{tbt_file.name}.freqsx")
@@ -45,24 +59,42 @@ def run_harpy_analysis(tbt_file, rdts, clean=False, turn_bits=16):
     return rdts_df, freq_amp
 
 
-def process_tbt_data(noise):
-    tbt_path_nonoise = get_tbt_path(beam=BEAM, nturns=NTURNS, index=NONOISE_INDEX)
+def process_tbt_data(beam, coupling_knob, tunes, noise):
+    assert beam in [1, 2], "Beam not 1 or 2"
+
+    tbt_path_nonoise = get_tbt_path(
+        beam=beam,
+        nturns=NTURNS,
+        coupling_knob=coupling_knob,
+        tunes=tunes,
+        index=NONOISE_INDEX,
+    )
     if not tbt_path_nonoise.exists():
         raise FileNotFoundError(f"Could not find file {tbt_path_nonoise}")
 
     if noise == 0.0:
         return tbt_path_nonoise
 
-    tbt_file_noisy = tbt_path_nonoise.name.replace("zero_noise", "noisy")
-    tbt_path_noisy = tbt_path_nonoise.parent / tbt_file_noisy
+    tbt_path_noisy = get_tbt_path(
+        beam=beam,
+        nturns=NTURNS,
+        coupling_knob=coupling_knob,
+        tunes=tunes,
+        index=SAMPLE_INDEX,
+    )
 
     clean_tbt = tbt.read_tbt(tbt_path_nonoise)
     tbt.write_tbt(tbt_path_noisy, clean_tbt, noise=noise)
     print(f"Written tbt file to {tbt_path_noisy}")
 
     # Now get the clean path (by copying the noisy)
-    tbt_file_clean = tbt_path_nonoise.name.replace("zero_noise", "harpy_cleaned")
-    tbt_path_clean = tbt_path_nonoise.parent / tbt_file_clean
+    tbt_path_clean = get_tbt_path(
+        beam=beam,
+        nturns=NTURNS,
+        coupling_knob=coupling_knob,
+        tunes=tunes,
+        index=HARPY_CLEAN_INDEX,
+    )
 
     if tbt_path_clean.exists():
         tbt_path_clean.unlink()

@@ -1,10 +1,9 @@
 import matplotlib.pyplot as plt
-import numpy as np
 import torch
 import turn_by_turn as tbt
 from torchviz import make_dot
-
-from config import CONFIG_NAME, NBPMS, NTURNS, NUM_CHANNELS, PLOT_DIR
+from lhcng.config import PLOT_DIR
+from config import CONFIG_NAME, NBPMS, NTURNS, NUM_CHANNELS
 from fft_processing import calculate_fft_and_amps
 
 COLOURS = [
@@ -18,10 +17,6 @@ COLOURS = [
     "#000000",  # Black
 ]
 plt.rcParams.update({"font.size": 16})
-
-if not PLOT_DIR.exists():
-    PLOT_DIR.mkdir(parents=True)
-
 
 # Function to convert linear ticks to 10^x format
 def log_format(y, pos):
@@ -225,7 +220,7 @@ def plot_tbt_difference(sample_dict, bpm_index, filename):
                 alpha=props["alpha"],
             )
         axs[i].set_xlabel("Turns")
-        axs[i].set_ylabel("$\delta$ Amplitude [mm]")
+        axs[i].set_ylabel("$\\delta$ Amplitude [mm]")
         axs[i].set_title(f"{plane} Plane")
         axs[i].legend()
         axs[i].grid(True, linestyle="--", alpha=0.6)
@@ -348,9 +343,9 @@ def plot_denoised_data_from_files(
     """
 
     # Load the TBT data from disk
-    denoised_x, denoised_y = load_tbt_tensor(recon_path)
-    noisy_x, noisy_y = load_tbt_tensor(noisy_path)
     nonoise_x, nonoise_y = load_tbt_tensor(nonoise_path)
+    noisy_x, noisy_y = load_tbt_tensor(noisy_path)
+    denoised_x, denoised_y = load_tbt_tensor(recon_path)
 
     # Create a dictionary to hold the data
     sample_dict = {

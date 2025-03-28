@@ -1,21 +1,18 @@
 from pathlib import Path
 
-import numpy as np
-import tfs
 import torch
 from turn_by_turn.lhc import read_tbt
 
-from config import DENOISED_INDEX, NBPMS, NTURNS
-from lhcng.model import get_model_dir
-from lhcng.tracking import get_tbt_path
+from config import NBPMS
 from dataloader import load_clean_data, write_data
 from pl_module import get_model
 
 
 def denoise_tbt(
     autoencoder_path: Path,
-    noisy_tbt_path: Path,
     model_dir: Path,
+    clean_tbt_path: Path,
+    noisy_tbt_path: Path,
     denoised_tbt_path: Path,
 ) -> Path:
     """
@@ -28,14 +25,11 @@ def denoise_tbt(
     Returns:
         Path: The file path of the cleaned turn-by-turn file.
     """
-    # Load beta functions from the twiss file (same as in load_clean_data)
-    model_dat = tfs.read(model_dir / "twiss.dat")
-    sqrt_betax = np.sqrt(model_dat["BETX"].values)
-    sqrt_betay = np.sqrt(model_dat["BETY"].values)
-
     # --- Load clean data to compute normalization parameters ---
     # load_clean_data returns a tensor of shape (TOTAL_TURNS, 2*NBPMS) where data are β-scaled.
-    clean_tensor_x, clean_tensor_y = load_clean_data()
+    clean_tensor_x, clean_tensor_y, sqrt_betax, sqrt_betay = load_clean_data(
+        clean_tbt_path, model_dir
+    )
     min_x = clean_tensor_x.min().item()
     max_x = clean_tensor_x.max().item()
     min_y = clean_tensor_y.min().item()
@@ -44,10 +38,14 @@ def denoise_tbt(
     # --- Load the noisy TBT data ---
     tbt_data = read_tbt(noisy_tbt_path)
     # Get the X and Y data and β-scale them (like in load_clean_data)
-    x_data = tbt_data.matrices[0].X.to_numpy() / sqrt_betax[:, None]
-    y_data = tbt_data.matrices[0].Y.to_numpy() / sqrt_betay[:, None]
+    x_data = tbt_data.matrices[0].X.to_numpy() 
+    y_data = tbt_data.matrices[0].Y.to_numpy() 
 
-    assert x_data.shape == y_data.shape == (NBPMS, NTURNS), "Data shape mismatch"
+    assert x_data.shape[0] == NBPMS, "Missing some BPMs"
+    assert y_data.shape[0] == NBPMS, "Missing some BPMs"
+
+    x_data /= sqrt_betax[:, None] 
+    y_data /= sqrt_betay[:, None]
 
     # --- Normalize noisy data using minmax scaling from the clean file ---
     norm_x = 2 * (x_data - min_x) / (max_x - min_x) - 1
@@ -79,4 +77,7 @@ def denoise_tbt(
 
     # --- Write the cleaned data ---
     cleaned_file_path, _ = write_data(recon_x, recon_y, model_dir, denoised_tbt_path)
+    assert cleaned_file_path == denoised_tbt_path, (
+        "Written path different to path asked to be written"
+    )
     return cleaned_file_path

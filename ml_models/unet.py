@@ -150,10 +150,10 @@ class UNetAutoencoderFixedDepth(nn.Module):
         return nn.Sequential(
             nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1),
             nn.BatchNorm2d(out_ch),
-            nn.LeakyReLU(0.01, inplace=True),
+            nn.LeakyReLU(0.1, inplace=True),
             nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1),
             nn.BatchNorm2d(out_ch),
-            nn.LeakyReLU(0.01, inplace=True)
+            nn.LeakyReLU(0.1, inplace=True)
         )
     
     def forward(self, x):

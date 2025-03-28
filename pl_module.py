@@ -4,9 +4,22 @@ import os
 import pytorch_lightning as pl
 import torch
 import torch.optim as optim
+from pytorch_lightning.callbacks import Callback
 
-from config import ALPHA, MIN_LR, MODEL_TYPE, NUM_EPOCHS, RESIDUALS, SCHEDULER
-from losses import CombinedCorrelationLoss, CorrelationLoss, SSPLoss, fft_loss_per_bpm
+from config import (
+    ALPHA,
+    MIN_LR,
+    MODEL_TYPE,
+    NUM_EPOCHS,
+    RESIDUALS,
+    SCHEDULER,
+)
+from losses import (
+    CombinedCorrelationLoss,
+    CorrelationLoss,
+    SSPLoss,
+    fft_loss_per_bpm,
+)
 from ml_models.conv_2d import (
     Conv2DAutoencoder,
     Conv2DAutoencoderLeaky,
@@ -21,6 +34,26 @@ from ml_models.unet import (
     UNetAutoencoderFixedDepth,
     UNetAutoencoderFixedDepthCheckpoint,
 )
+
+
+class NoiseAnnealingCallback(Callback): 
+    def __init__(self, initial_multiplier=1.0, final_multiplier=0.1, max_epochs=NUM_EPOCHS): 
+        super().__init__()
+        self.initial_multiplier = initial_multiplier 
+        self.final_multiplier = final_multiplier 
+        self.max_epochs = max_epochs
+
+    def on_train_epoch_start(self, trainer, pl_module):
+        # Compute a new multiplier (for example, a linear schedule)
+        current_epoch = trainer.current_epoch
+        new_multiplier = self.initial_multiplier - (
+            (self.initial_multiplier - self.final_multiplier) * (current_epoch / self.max_epochs)
+        )
+
+        # Update the dataset's noise multiplier.
+        train_dataloader_subset = trainer.train_dataloader.dataset
+        train_dataloader_subset.dataset.update_noise_multiplier(new_multiplier)
+        pl_module.log("noise_multiplier", new_multiplier)
 
 
 class LitAutoencoder(pl.LightningModule):
@@ -39,6 +72,7 @@ class LitAutoencoder(pl.LightningModule):
             self.loss_fn = SSPLoss()
         elif loss_type == "comb_ssp":
             self.ssp = SSPLoss()
+            self.mse = torch.nn.functional.mse_loss
             self.loss_fn = self.combined_ssp_loss
         elif loss_type == "fft":
             self.loss_fn = self.combined_fft_loss
@@ -54,7 +88,7 @@ class LitAutoencoder(pl.LightningModule):
 
     def combined_ssp_loss(self, pred, target):
         ssp_loss = self.ssp(pred, target)
-        mse_loss = torch.nn.functional.mse_loss(pred, target)
+        mse_loss = self.mse(pred, target)
         return ssp_loss + mse_loss
 
     def forward(self, x):
@@ -137,4 +171,3 @@ def get_model():
         return FNO2d()
     else:
         raise ValueError(f"Unknown model type: {MODEL_TYPE}")
-

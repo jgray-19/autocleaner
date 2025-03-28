@@ -25,8 +25,13 @@ from config import (
     print_config,
     save_experiment_config,
 )
-from dataloader import build_sample_dict, load_data  #, write_data
-from pl_module import LitAutoencoder, find_newest_file, get_model
+from dataloader import build_sample_dict, load_data  # , write_data
+from pl_module import (
+    LitAutoencoder,
+    find_newest_file,
+    get_model,
+    NoiseAnnealingCallback,
+)
 from visualisation import (
     plot_data_distribution,
     plot_denoised_data,
@@ -80,12 +85,14 @@ else:
 
     # torch.cuda.empty_cache()
     b4_train = time.time()
+    noise_annealing_callback = NoiseAnnealingCallback()
     trainer = pl.Trainer(
         accumulate_grad_batches=ACCUMULATE_BATCHES,
         max_epochs=NUM_EPOCHS,
         log_every_n_steps=NLOGSTEPS,
         default_root_dir=root_dir,  # Set the logging path
         logger=logger,
+        callbacks=[noise_annealing_callback],
         # max_time={"hours": 7.5},
         # enable_checkpointing=False,  # Disables automatic checkpoint saving
     )
@@ -119,7 +126,11 @@ with torch.no_grad():
         recon_x = model(noisy_batch_x)
         recon_y = model(noisy_batch_y)
 
-assert recon_x.size(0) == noisy_batch_x.size(0) == noisy_batch_y.size(0) == recon_y.size(0)
+assert (
+    recon_x.size(0) == noisy_batch_x.size(0) == noisy_batch_y.size(0) == recon_y.size(0)
+)
+
+norm_info = {key: val[0].numpy() for key, val in batch["norm_info"].items()}
 sample = {
     "noisy_x": noisy_batch_x[0, 0, ...].numpy(),
     "noisy_y": noisy_batch_y[0, 0, ...].numpy(),
@@ -127,7 +138,7 @@ sample = {
     "recon_y": recon_y[0, 0, ...].numpy(),
     "clean_x": batch["clean_x"][0, 0, ...].numpy(),
     "clean_y": batch["clean_y"][0, 0, ...].numpy(),
-    "norm_info": batch["norm_info"][0],
+    "norm_info": norm_info,
 }
 
 sample_dict = build_sample_dict(sample, dataset)
