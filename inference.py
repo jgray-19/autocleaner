@@ -3,6 +3,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import torch
+from lhcng.config import PLOT_DIR
 
 # Import your relevant modules
 from config import (
@@ -16,16 +17,20 @@ from config import (
     WEIGHT_DECAY,
     save_experiment_config,
 )
-from dataloader import build_sample_dict, load_data
+from dataloader import (
+    BPMSDataset,
+    build_sample_dict,
+    load_data,
+    save_global_norm_params,
+)
 from pl_module import LitAutoencoder, find_newest_file, get_model
 from visualisation import plot_denoised_data
-from lhcng.config import PLOT_DIR
 
 
 def denoise_validation_sample_from_checkpoint(
     checkpoint_name: str,
     val_loader,
-    dataset,
+    dataset: BPMSDataset,
     residuals: bool = RESIDUALS,
     device_index: int = 111,
     do_plot: bool = True,
@@ -48,9 +53,13 @@ def denoise_validation_sample_from_checkpoint(
                             (in original scale) for the chosen sample in the batch.
     """
 
-    print(f"Building '{MODEL_TYPE}' model and loading checkpoint on CPU from: {checkpoint_name}")
+    print(
+        f"Building '{MODEL_TYPE}' model and loading checkpoint on CPU from: {checkpoint_name}"
+    )
     # 1) Build the model and load checkpoint weights on CPU
-    checkpoint_path = Path("/home/jovyan/tensor-logs/") / checkpoint_name / "checkpoints"
+    checkpoint_path = (
+        Path("/home/jovyan/tensor-logs/") / checkpoint_name / "checkpoints"
+    )
     checkpoint_file = find_newest_file(checkpoint_path)
     lit_model = LitAutoencoder.load_from_checkpoint(
         checkpoint_path=checkpoint_path / checkpoint_file,
@@ -61,7 +70,7 @@ def denoise_validation_sample_from_checkpoint(
         weight_decay=WEIGHT_DECAY,
     )
     lit_model.eval()
-    
+
     b4_save = time.time()
     torch.save(lit_model.model.state_dict(), MODEL_SAVE_PATH)
     print(f"Model saved. Took {time.time() - b4_save:.2f} seconds.")
@@ -95,7 +104,15 @@ def denoise_validation_sample_from_checkpoint(
     assert By == Ny, "Recon and input batch size mismatch for Y"
 
     # 4) Build a sample_dict for the first item in the batch
-    norm_info = {key: val[0].numpy() for key, val in batch["norm_info"].items()}
+    norm_info = {
+        "min_x": dataset.global_min_x,
+        "max_x": dataset.global_max_x,
+        "min_y": dataset.global_min_y,
+        "max_y": dataset.global_max_y,
+    }
+    # Save global normalization parameters
+    save_global_norm_params(dataset, filepath="global_norm_params.json")
+
     # If theres a problem, first check this!
     sample = {
         "noisy_x": noisy_batch_x[0, 0, ...].numpy(),
@@ -122,8 +139,9 @@ def denoise_validation_sample_from_checkpoint(
 
     return sample_dict
 
+
 # Suppose you already have:
-#   val_loader (DataLoader), 
+#   val_loader (DataLoader),
 #   dataset (BPMSDataset),
 #   and a path to your checkpoint: my_ckpt_path
 
@@ -139,7 +157,7 @@ sample_dict = denoise_validation_sample_from_checkpoint(
     checkpoint_name="2025-03-27_16-54-52",
     val_loader=val_loader,
     dataset=dataset,
-    residuals=False,  
+    residuals=False,
     device_index=111,
-    do_plot=True
+    do_plot=True,
 )

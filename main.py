@@ -21,16 +21,17 @@ from config import (
     NUM_EPOCHS,
     RESIDUALS,
     RESUME_FROM_CKPT,
+    SEED,
     WEIGHT_DECAY,
     print_config,
     save_experiment_config,
 )
-from dataloader import build_sample_dict, load_data  # , write_data
+from dataloader import build_sample_dict, load_data, save_global_norm_params
 from pl_module import (
     LitAutoencoder,
+    NoiseAnnealingCallback,
     find_newest_file,
     get_model,
-    NoiseAnnealingCallback,
 )
 from visualisation import (
     plot_data_distribution,
@@ -44,8 +45,8 @@ free, available = torch.cuda.mem_get_info()
 print("Current GPU use:", (available - free) / 1e9, "GB")
 
 # Set up reproducibility
-torch.manual_seed(42)
-np.random.seed(42)
+torch.manual_seed(SEED)
+np.random.seed(SEED)
 
 # Load data
 print("Loading data...")
@@ -110,6 +111,9 @@ else:
     torch.save(model.state_dict(), MODEL_SAVE_PATH)
     print(f"Model saved. Took {time.time() - b4_save:.2f} seconds.")
 
+    # Save global normalization parameters
+    save_global_norm_params(dataset, filepath="global_norm_params.json")
+
 # Denoise validation data
 print("Denoising validation data...")
 b4_denoise = time.time()
@@ -130,7 +134,13 @@ assert (
     recon_x.size(0) == noisy_batch_x.size(0) == noisy_batch_y.size(0) == recon_y.size(0)
 )
 
-norm_info = {key: val[0].numpy() for key, val in batch["norm_info"].items()}
+norm_info = {
+    "min_x": dataset.global_min_x,
+    "max_x": dataset.global_max_x,
+    "min_y": dataset.global_min_y,
+    "max_y": dataset.global_max_y,
+}
+
 sample = {
     "noisy_x": noisy_batch_x[0, 0, ...].numpy(),
     "noisy_y": noisy_batch_y[0, 0, ...].numpy(),

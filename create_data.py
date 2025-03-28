@@ -47,33 +47,46 @@ coupling = [
 kick_amps = [
     5e-5,
     1e-4,
-    5e-4,
+    2e-4,
 ]
 
 def delete_unwanted_files(beam, nturns, coupling_knob, tunes, kick_amp):
     # Delete the TFS file using pathlib instead of os
-    tfs_file = Path(get_tfs_path(beam, nturns, coupling_knob, tunes))
+    tfs_file = Path(get_tfs_path(beam, nturns, coupling_knob, tunes, kick_amp))
     if tfs_file.exists():
         tfs_file.unlink()
+    
+    # Loop through the model directory and delete all the files, including the macro directory
+    model_dir = Path(get_model_dir(beam, coupling_knob, tunes))
+    if model_dir.exists():
+        for file in model_dir.iterdir():
+            if file.is_file():
+                file.unlink()
+            elif file.is_dir() and file.name == "macros":
+                shutil.rmtree(file)
+        # Now delete the model directory itself
+        model_dir.rmdir()
+    # Uncomment the following lines if you want to delete more than just the whole directory
+
 
     # Delete the .ini files in the model directory using Path.iterdir()
-    model_dir = Path(get_model_dir(beam, coupling_knob, tunes))
-    for file in model_dir.iterdir():
-        if file.suffix == ".ini":
-            file.unlink()
+    # model_dir = Path(get_model_dir(beam, coupling_knob, tunes))
+    # for file in model_dir.iterdir():
+    #     if file.suffix == ".ini":
+    #         file.unlink()
 
     # Delete the saved sequence files using Path.unlink()
-    madx_seq = model_dir / f"lhcb{beam}_saved.seq"
-    mad_seq = model_dir / f"lhcb{beam}_saved.mad"
-    if madx_seq.exists():
-        madx_seq.unlink()
-    if mad_seq.exists():
-        mad_seq.unlink()
+    # madx_seq = model_dir / f"lhcb{beam}_saved.seq"
+    # mad_seq = model_dir / f"lhcb{beam}_saved.mad"
+    # if madx_seq.exists():
+    #     madx_seq.unlink()
+    # if mad_seq.exists():
+    #     mad_seq.unlink()
     
     # Delete the macros folder (unchanged as it's already using shutil)
-    macros_dir = model_dir / "macros"
-    if macros_dir.exists():
-        shutil.rmtree(macros_dir)
+    # macros_dir = model_dir / "macros"
+    # if macros_dir.exists():
+    #     shutil.rmtree(macros_dir)
 
 def process_configuration(args):
     beam, tunes, cknob, kick = args
@@ -104,7 +117,7 @@ def process_configuration(args):
     tbt.write(tbt_file, tbt_data)
     del tbt_data
 
-    delete_unwanted_files(beam, nturns, cknob, tunes)
+    delete_unwanted_files(beam, nturns, cknob, tunes, kick)
 
 if __name__ == '__main__':
     configs = []

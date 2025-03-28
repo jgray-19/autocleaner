@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import numpy as np
@@ -12,15 +13,14 @@ from turn_by_turn.lhc import read_tbt, write_tbt
 
 from config import (
     BATCH_SIZE,
+    CLEAN_PARAM_LIST,
     NBPMS,
     NOISE_FACTORS,
+    NONOISE_INDEX,
     NTURNS,
     NUM_NOISY_PER_CLEAN,
-    SEED,
     TOTAL_TURNS,
     TRAIN_RATIO,
-    NONOISE_INDEX,
-    CLEAN_PARAM_LIST,
 )
 
 
@@ -38,8 +38,12 @@ def load_clean_data(sdds_data_path, model_dir) -> tuple[torch.Tensor, torch.Tens
     x_data = sdds_data.matrices[0].X.to_numpy()
     y_data = sdds_data.matrices[0].Y.to_numpy()
 
-    assert x_data.shape[0] == NBPMS, f"Missing some BPMs, x data has shape: {x_data.shape}"
-    assert y_data.shape[0] == NBPMS, f"Missing some BPMs, y data has shape: {y_data.shape}"
+    assert x_data.shape[0] == NBPMS, (
+        f"Missing some BPMs, x data has shape: {x_data.shape}"
+    )
+    assert y_data.shape[0] == NBPMS, (
+        f"Missing some BPMs, y data has shape: {y_data.shape}"
+    )
 
     return (
         torch.tensor(x_data / sqrt_betax[:, None], dtype=torch.float32),
@@ -66,7 +70,7 @@ def write_data(
 
     assert x_data.shape[0] == NBPMS, "Missing BPMs"
     assert y_data.shape[0] == NBPMS, "Missing BPMs"
-    
+
     print("Writing datashape with:", x_data.shape, y_data.shape)
 
     x_data = x_data * sqrt_betax[:, None]
@@ -95,20 +99,16 @@ class BPMSDataset(Dataset):
         clean_param_list,
         num_variations_per_clean,
         noise_factors=NOISE_FACTORS,
-        base_seed=SEED,
     ):
         super().__init__()
-        self.clean_param_list = (
-            clean_param_list  # List of dicts with keys: beam, tunes, coupling.
-        )
+        self.clean_param_list = clean_param_list
         self.num_files_per_clean = num_variations_per_clean
         self.noise_factors = noise_factors
-        self.base_seed = base_seed
-        self.total_files = len(clean_param_list) * num_variations_per_clean
 
-        # Preload clean files and store per-file normalisation parameters.
-        self.norm_data = []  # A list of dictionaries (one per clean file)
-        self.num_clean = len(self.clean_param_list)
+        # Load all clean files once into big lists so we never do it in __getitem__
+        all_clean_x = []
+        all_clean_y = []
+
         for params in self.clean_param_list:
             sdds_data_path = get_tbt_path(
                 params["beam"],
@@ -121,47 +121,44 @@ class BPMSDataset(Dataset):
             model_dir = get_model_dir(
                 params["beam"], params["coupling"], params["tunes"]
             )
-            clean_x, clean_y, sqrt_betax, sqrt_betay = load_clean_data(
-                sdds_data_path, model_dir
-            )
-            # Compute normalisation parameters.
-            min_x = torch.min(clean_x)
-            max_x = torch.max(clean_x)
-            min_y = torch.min(clean_y)
-            max_y = torch.max(clean_y)
-            sqrt_betax = torch.tensor(sqrt_betax, dtype=torch.float32)
-            sqrt_betay = torch.tensor(sqrt_betay, dtype=torch.float32)
-            norm_clean_x = 2 * (clean_x - min_x) / (max_x - min_x) - 1
-            norm_clean_y = 2 * (clean_y - min_y) / (max_y - min_y) - 1
-            noise_scale_x = ((2 / (max_x - min_x)) / sqrt_betax).view(1, -1, 1)
-            noise_scale_y = ((2 / (max_y - min_y)) / sqrt_betay).view(1, -1, 1)
 
-            # Store all needed parameters for later denormalisation.
-            self.norm_data.append(
-                {
-                    "min_x": min_x,
-                    "max_x": max_x,
-                    "min_y": min_y,
-                    "max_y": max_y,
-                    "sqrt_betax": sqrt_betax,
-                    "sqrt_betay": sqrt_betay,
-                    "noise_scale_x": noise_scale_x,
-                    "noise_scale_y": noise_scale_y,
-                    "norm_clean_x": norm_clean_x.unsqueeze(0),  # add channel dimension
-                    "norm_clean_y": norm_clean_y.unsqueeze(0),
-                }
-            )
+            # Load file once
+            clean_x, clean_y, _, _ = load_clean_data(sdds_data_path, model_dir)
+            # Each is shape (NBPMS, TOTAL_TURNS)
+            all_clean_x.append(clean_x)
+            all_clean_y.append(clean_y)
 
-        # Precompute random clean indices, offsets, and noise factors for each sample.
+        # Concatenate along the "turn" dimension => shape (NBPMS, sum_of_turns)
+        big_clean_x = torch.cat(all_clean_x, dim=1)
+        big_clean_y = torch.cat(all_clean_y, dim=1)
+
+        # Compute GLOBAL min/max across the entire dataset
+        self.global_min_x = big_clean_x.min(dim=1, keepdim=True)[0]  # shape (NBPMS, 1)
+        self.global_max_x = big_clean_x.max(dim=1, keepdim=True)[0]  # shape (NBPMS, 1)
+        self.global_min_y = big_clean_y.min(dim=1, keepdim=True)[0]
+        self.global_max_y = big_clean_y.max(dim=1, keepdim=True)[0]
+
+        # Now store each file's raw data (still in memory) so we can quickly sample from it
+        # We'll keep them separate from the big concatenated arrays for clarity.
+        self.cached_clean_x = all_clean_x  # list of Tensors
+        self.cached_clean_y = all_clean_y  # list of Tensors
+
+        # Next, define how many total samples we want
+        self.num_clean = len(self.clean_param_list)
+        self.total_files = self.num_clean * num_variations_per_clean
+
+        # Precompute random indices, offsets, noise
         self.clean_indices = np.random.randint(0, self.num_clean, size=self.total_files)
-        self.offsets = np.random.randint(0, TOTAL_TURNS - NTURNS + 1, size=self.total_files)
-        self.noise_factors = np.random.choice(noise_factors, size=self.total_files, replace=True)
-        
-        # Introduce a noise multiplier that can be updated during training.
+        self.offsets = np.random.randint(
+            0, TOTAL_TURNS - NTURNS + 1, size=self.total_files
+        )
+        self.noise_factors = np.random.choice(
+            noise_factors, size=self.total_files, replace=True
+        )
+
+        # Initialize noise multiplier for dynamic noise scaling
         self.current_noise_multiplier = 1.0
 
-        # Initialise cache for slices.
-        # self.slice_cache = {}
     def update_noise_multiplier(self, multiplier):
         self.current_noise_multiplier = multiplier
 
@@ -169,27 +166,45 @@ class BPMSDataset(Dataset):
         return self.total_files
 
     def __getitem__(self, idx):
-        clean_idx = self.clean_indices[idx]  # Use precomputed clean_idx
-        norm_info = self.norm_data[clean_idx]
-        offset = self.offsets[idx]  # Use precomputed offset
-
-        clean_slice_x = norm_info["norm_clean_x"][:, :, offset : offset + NTURNS]
-        clean_slice_y = norm_info["norm_clean_y"][:, :, offset : offset + NTURNS]
-
-        # Use precomputed noise_factors indexed by idx.
+        # 1) Identify which file we want
+        file_idx = self.clean_indices[idx]  # index into self.cached_clean_x
+        offset = self.offsets[idx]  # random offset for slicing
         noise_factor = self.noise_factors[idx] * self.current_noise_multiplier
-        noise_x = torch.randn(clean_slice_x.shape, dtype=clean_slice_x.dtype) * noise_factor
-        noise_y = torch.randn(clean_slice_y.shape, dtype=clean_slice_y.dtype) * noise_factor
 
-        noisy_slice_x = clean_slice_x + noise_x * norm_info["noise_scale_x"]
-        noisy_slice_y = clean_slice_y + noise_y * norm_info["noise_scale_y"]
+        # 2) Pull out the (NBPMS, TOTAL_TURNS) raw data from memory
+        raw_x = self.cached_clean_x[file_idx]  # shape (NBPMS, TOTAL_TURNS)
+        raw_y = self.cached_clean_y[file_idx]
 
+        # 3) Slice out (NBPMS, NTURNS)
+        slice_x = raw_x[:, offset : offset + NTURNS]
+        slice_y = raw_y[:, offset : offset + NTURNS]
+
+        # 4) Normalize with the global stats
+        norm_slice_x = (
+            2.0
+            * (slice_x - self.global_min_x)
+            / (self.global_max_x - self.global_min_x)
+            - 1.0
+        )
+        norm_slice_y = (
+            2.0
+            * (slice_y - self.global_min_y)
+            / (self.global_max_y - self.global_min_y)
+            - 1.0
+        )
+
+        # 5) Add noise in normalized domain
+        noise_x = torch.randn_like(norm_slice_x) * noise_factor
+        noise_y = torch.randn_like(norm_slice_y) * noise_factor
+        noisy_slice_x = norm_slice_x + noise_x
+        noisy_slice_y = norm_slice_y + noise_y
+
+        # 6) Reshape if your model expects 4D: (B, C, NBPMS, NTURNS) and return
         return {
-            "clean_x": clean_slice_x,
-            "clean_y": clean_slice_y,
-            "noisy_x": noisy_slice_x,
-            "noisy_y": noisy_slice_y,
-            "norm_info": norm_info,  # include normalisation information in each sample
+            "clean_x": norm_slice_x.unsqueeze(0).unsqueeze(0),
+            "clean_y": norm_slice_y.unsqueeze(0).unsqueeze(0),
+            "noisy_x": noisy_slice_x.unsqueeze(0).unsqueeze(0),
+            "noisy_y": noisy_slice_y.unsqueeze(0).unsqueeze(0),
         }
 
     def denormalise(
@@ -205,15 +220,15 @@ class BPMSDataset(Dataset):
         if plane == "x":
             min_val = norm_info["min_x"].item()
             max_val = norm_info["max_x"].item()
-            betas = norm_info["sqrt_betax"]
+            # betas = norm_info["sqrt_betax"]
         else:
             min_val = norm_info["min_y"].item()
             max_val = norm_info["max_y"].item()
-            betas = norm_info["sqrt_betay"]
+            # betas = norm_info["sqrt_betay"]
 
         # Inverse min–max scaling.
         orig_data = (norm_data + 1) / 2 * (max_val - min_val) + min_val
-        return orig_data * betas[:, None]
+        return orig_data  # * betas[:, None]
 
 
 def load_data() -> tuple[DataLoader, DataLoader, BPMSDataset]:
@@ -252,3 +267,18 @@ def build_sample_dict(sample: dict[str, np.ndarray], dataset: BPMSDataset) -> di
             sample[f"recon_{plane}"], plane=plane, norm_info=norm_info
         )
     return sample_dict
+
+
+def save_global_norm_params(dataset, filepath="global_norm_params.json"):
+    """
+    Store global min/max for x and y as JSON so we can reload in inference.
+    """
+    # They are shape (NBPMS,1), so convert to lists
+    norm_params = {
+        "min_x": dataset.global_min_x.squeeze(1).tolist(),
+        "max_x": dataset.global_max_x.squeeze(1).tolist(),
+        "min_y": dataset.global_min_y.squeeze(1).tolist(),
+        "max_y": dataset.global_max_y.squeeze(1).tolist(),
+    }
+    with open(filepath, "w") as f:
+        json.dump(norm_params, f, indent=2)
