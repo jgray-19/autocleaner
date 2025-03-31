@@ -134,6 +134,10 @@ class BPMSDataset(Dataset):
         # Load all clean files once into big lists so we never do it in __getitem__
         all_clean_x = []
         all_clean_y = []
+        self.global_min_x = torch.inf
+        self.global_max_x = 0
+        self.global_min_y = torch.inf
+        self.global_max_y = 0
 
         for params in self.clean_param_list:
             sdds_data_path = get_tbt_path(
@@ -154,15 +158,10 @@ class BPMSDataset(Dataset):
             all_clean_x.append(clean_x)
             all_clean_y.append(clean_y)
 
-        # Concatenate along the "turn" dimension => shape (NBPMS, sum_of_turns)
-        big_clean_x = torch.cat(all_clean_x, dim=1)
-        big_clean_y = torch.cat(all_clean_y, dim=1)
-
-        # Compute GLOBAL min/max across the entire dataset
-        self.global_min_x = big_clean_x.min(dim=1, keepdim=True)[0]  # shape (NBPMS, 1)
-        self.global_max_x = big_clean_x.max(dim=1, keepdim=True)[0]  # shape (NBPMS, 1)
-        self.global_min_y = big_clean_y.min(dim=1, keepdim=True)[0]
-        self.global_max_y = big_clean_y.max(dim=1, keepdim=True)[0]
+            self.global_min_x = min(self.global_min_x, clean_x.min())
+            self.global_max_x = max(self.global_max_x, clean_x.max())
+            self.global_min_y = min(self.global_min_y, clean_y.min())
+            self.global_max_y = max(self.global_max_y, clean_y.max())
 
         # Now store each file's raw data (still in memory) so we can quickly sample from it
         # We'll keep them separate from the big concatenated arrays for clarity.

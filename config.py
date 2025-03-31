@@ -4,9 +4,9 @@ from datetime import datetime
 from generic_parser.tools import DotDict
 
 # General Settings
-NUM_NOISY_PER_CLEAN = 15
+NUM_NOISY_PER_CLEAN = 10
 LOAD_MODEL = False
-RESUME_FROM_CKPT = False
+RESUME_FROM_CKPT = True
 if RESUME_FROM_CKPT:
     # CONFIG_NAME = "2025-03-21_09-20-38"
     # CONFIG_NAME = "2025-03-25_12-35-50" # Now using many datas
@@ -21,7 +21,10 @@ if RESUME_FROM_CKPT:
     # CONFIG_NAME = "2025-03-27_16-43-06"
     # CONFIG_NAME = "2025-03-27_16-54-52" # Smaller size of module
     # Even smaller base channels as the autoencoder is still learning the different tunes. 
-    CONFIG_NAME = "2025-03-28_10-10-08"
+    # CONFIG_NAME = "2025-03-28_22-23-26"
+
+    # Now rather than per BPM normalisation, there's a global normalisation
+    CONFIG_NAME = "2025-03-31_09-01-42"
 else:
     CONFIG_NAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
@@ -47,7 +50,7 @@ TUNE_LIST = [
     [0.69, 0.68],
 ]
 COUPLING = [False, 1e-4, 1e-3]
-KICK_AMPS = [5e-5, 1e-4, 5e-4]
+KICK_AMPS = [5e-5, 1e-4, 2e-4]
 
 BEAMS = [1]
 CLEAN_PARAM_LIST = []
@@ -76,7 +79,7 @@ NLOGSTEPS = 1
 NUM_CHANNELS = 1
 PRECISION = "16-mixed"
 
-NUM_EPOCHS = 500
+NUM_EPOCHS = 1500
 BOTTLENECK_SIZE = 4
 BASE_CHANNELS = 4
 
@@ -97,7 +100,7 @@ NOISE_FACTORS = [1e-3]
 # MODEL_TYPE = "leaky"
 MODEL_TYPE = "unet_fixed"
 MODEL_DEPTH = 4
-RESIDUALS = True
+RESIDUALS = False
 
 LOSS_TYPE = "comb_ssp"
 # LOSS_TYPE = "mse"

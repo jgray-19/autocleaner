@@ -44,11 +44,7 @@ coupling = [
     # 3e-3,
 ]
 
-kick_amps = [
-    5e-5,
-    1e-4,
-    2e-4,
-]
+kick_amps = [5e-5, 1e-4, 2e-4]
 
 def delete_unwanted_files(beam, nturns, coupling_knob, tunes, kick_amp):
     # Delete the TFS file using pathlib instead of os

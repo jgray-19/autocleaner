@@ -152,9 +152,9 @@ print(f"Data loaded. Took {time.time() - b4_load:.2f} seconds.")
 
 
 sample_dict = denoise_validation_sample_from_checkpoint(
-    # checkpoint_name=CONFIG_NAME,
+    checkpoint_name=CONFIG_NAME,
     # checkpoint_name="2025-03-27_16-43-06",
-    checkpoint_name="2025-03-27_16-54-52",
+    # checkpoint_name="2025-03-27_16-54-52",
     val_loader=val_loader,
     dataset=dataset,
     residuals=False,
