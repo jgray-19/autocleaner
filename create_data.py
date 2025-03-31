@@ -122,8 +122,17 @@ if __name__ == '__main__':
         for tunes in tune_list:
             for cknob in coupling:
                 for kick in kick_amps:
-                    print(f"Processing beam {beam}, tunes {tunes}, coupling {cknob} kick {kick}")
+                    # tbt_file = get_tbt_path(
+                    #         beam=beam,
+                    #         nturns=nturns,
+                    #         coupling_knob=cknob,
+                    #         tunes=tunes,
+                    #         kick_amp=kick,
+                    #         index=NONOISE_INDEX,
+                    #     )
+                    # if not tbt_file.exists():
                     configs.append((beam, tunes, cknob, kick))
+                    print(f"Processing beam {beam}, tunes {tunes}, coupling {cknob} kick {kick}")
 
     with concurrent.futures.ProcessPoolExecutor() as executor:
         executor.map(process_configuration, configs)
