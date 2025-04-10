@@ -19,7 +19,7 @@ from config import (
 )
 from dataloader import (
     BPMSDataset,
-    build_sample_dict,
+    denornmalise_sample_dict,
     load_data,
     save_global_norm_params,
 )
@@ -123,7 +123,7 @@ def denoise_validation_sample_from_checkpoint(
         "clean_y": batch["clean_y"][0, 0, ...].numpy(),
         "norm_info": norm_info,
     }
-    sample_dict = build_sample_dict(sample, dataset)
+    sample_dict = denornmalise_sample_dict(sample, dataset)
 
     print(f"Denoising took {time.time() - b4_denoise:.2f} seconds (CPU).")
     print(f"Denoised Data for BPM device {device_index}")
@@ -153,6 +153,7 @@ print(f"Data loaded. Took {time.time() - b4_load:.2f} seconds.")
 
 sample_dict = denoise_validation_sample_from_checkpoint(
     checkpoint_name=CONFIG_NAME,
+    # checkpoint_name="2025-03-31_10-00-56",
     # checkpoint_name="2025-03-27_16-43-06",
     # checkpoint_name="2025-03-27_16-54-52",
     val_loader=val_loader,

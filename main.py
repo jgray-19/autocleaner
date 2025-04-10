@@ -26,7 +26,7 @@ from config import (
     print_config,
     save_experiment_config,
 )
-from dataloader import build_sample_dict, load_data, save_global_norm_params
+from dataloader import denornmalise_sample_dict, load_data, save_global_norm_params
 from pl_module import (
     LitAutoencoder,
     NoiseAnnealingCallback,
@@ -151,7 +151,7 @@ sample = {
     "norm_info": norm_info,
 }
 
-sample_dict = build_sample_dict(sample, dataset)
+sample_dict = denornmalise_sample_dict(sample, dataset)
 
 print(f"Denoising took {time.time() - b4_denoise:.2f} seconds.")
 

@@ -144,6 +144,7 @@ class UNetAutoencoderFixedDepth(nn.Module):
         
         # Final output convolution to get back to in_channels
         self.final_conv = nn.Conv2d(base_channels, in_channels, kernel_size=1)
+        self._initialize_weights()
     
     def conv_block(self, in_ch, out_ch):
         """A double convolution block with BatchNorm and LeakyReLU activations."""
@@ -207,6 +208,13 @@ class UNetAutoencoderFixedDepth(nn.Module):
         diffX = ref.size(3) - x.size(3)
         return F.pad(x, [diffX // 2, diffX - diffX // 2,
                          diffY // 2, diffY - diffY // 2])
+    
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, torch.nn.Conv2d) or isinstance(m, torch.nn.ConvTranspose2d):
+                torch.nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    torch.nn.init.zeros_(m.bias)
 
 class UNetAutoencoderFixedDepthCheckpoint(nn.Module):
     def __init__(self, in_channels=NUM_CHANNELS, base_channels=BASE_CHANNELS):
@@ -308,3 +316,91 @@ class UNetAutoencoderFixedDepthCheckpoint(nn.Module):
         out = self.final_conv(d1)
         return out
 
+
+class DoubleConv(nn.Module):
+    """(Convolution => BN => ReLU) * 2"""
+    def __init__(self, in_channels, out_channels, dilation=1):
+        super().__init__()
+        padding = ((3 - 1) // 2) * dilation
+        self.double_conv = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=padding, dilation=dilation),
+            nn.BatchNorm2d(out_channels),
+            nn.LeakyReLU(0.01, inplace=True),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=padding, dilation=dilation),
+            nn.BatchNorm2d(out_channels),
+            nn.LeakyReLU(0.01, inplace=True),
+        )
+    def forward(self, x):
+        return self.double_conv(x)
+
+def center_crop(tensor, target_height, target_width):
+    _, _, h, w = tensor.size()
+    start_y = (h - target_height) // 2
+    start_x = (w - target_width) // 2
+    return tensor[:, :, start_y:start_y + target_height, start_x:start_x + target_width]
+
+class UpBlock(nn.Module):
+    """Upsampling block with center-cropping both tensors to match dimensions."""
+    def __init__(self, in_channels, skip_channels, out_channels):
+        super().__init__()
+        # Convert in_channels (from previous decoder) to out_channels
+        self.up = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
+        # After upsampling, concatenate with skip (skip_channels) and then apply double conv
+        self.conv = DoubleConv(skip_channels + out_channels, out_channels)
+        
+    def forward(self, x, skip):
+        x = self.up(x)
+        # Determine the target spatial size (minimum of both tensors)
+        target_h = min(x.size(2), skip.size(2))
+        target_w = min(x.size(3), skip.size(3))
+        x = center_crop(x, target_h, target_w)
+        skip = center_crop(skip, target_h, target_w)
+        x = torch.cat([skip, x], dim=1)
+        return self.conv(x)
+
+class DownBlock(nn.Module):
+    """Down block: double conv followed by max pooling.
+       Returns both the conv output (for skip connection) and the pooled result."""
+    def __init__(self, in_channels, out_channels, dilation=1):
+        super().__init__()
+        self.conv = DoubleConv(in_channels, out_channels, dilation=dilation)
+    def forward(self, x):
+        x_conv = self.conv(x)
+        x_pooled = F.max_pool2d(x_conv, kernel_size=2, ceil_mode=True)
+        return x_conv, x_pooled
+
+class ModifiedUNetFixed(nn.Module):
+    def __init__(self, in_channels=NUM_CHANNELS, out_channels=NUM_CHANNELS, base_channels=BASE_CHANNELS):
+        super().__init__()
+        self.inc = DoubleConv(in_channels, base_channels)                     # output: base_channels (e.g., 16)
+        self.down1 = DownBlock(base_channels, base_channels * 2)                # skip: 32, pooled: 32
+        self.down2 = DownBlock(base_channels * 2, base_channels * 4, dilation=2)  # skip: 64, pooled: 64
+        self.down3 = DownBlock(base_channels * 4, base_channels * 8, dilation=4)  # skip: 128, pooled: 128
+        self.down4 = DownBlock(base_channels * 8, base_channels * 16, dilation=8) # skip: 256, pooled: 256
+        
+        # Bottleneck: no pooling, still at lowest resolution.
+        self.bottleneck = DoubleConv(base_channels * 16, base_channels * 16, dilation=2)  # output: 256
+        
+        # Decoder: each UpBlock takes the bottleneck/previous decoder output and the corresponding skip.
+        self.up1 = UpBlock(in_channels=base_channels * 16, skip_channels=base_channels * 16, out_channels=base_channels * 8)  # from 256 to 128
+        self.up2 = UpBlock(in_channels=base_channels * 8, skip_channels=base_channels * 8, out_channels=base_channels * 4)    # from 128 to 64
+        self.up3 = UpBlock(in_channels=base_channels * 4, skip_channels=base_channels * 4, out_channels=base_channels * 2)    # from 64 to 32
+        self.up4 = UpBlock(in_channels=base_channels * 2, skip_channels=base_channels * 2, out_channels=base_channels)        # from 32 to 16
+        
+        self.outc = nn.Conv2d(base_channels, out_channels, kernel_size=1)
+        self.out_activation = nn.Tanh()  # Bound outputs to [-1,1]
+        
+    def forward(self, x):
+        x1 = self.inc(x)                     # shape: (B, 16, H, W)
+        x2_skip, x2 = self.down1(x1)           # x2_skip: (B, 32, H/?, W/?), x2: (B, 32, H/2, W/2)
+        x3_skip, x3 = self.down2(x2)           # x3_skip: (B, 64, H/2, W/2), x3: (B, 64, H/4, W/4)
+        x4_skip, x4 = self.down3(x3)           # x4_skip: (B, 128, H/4, W/4), x4: (B, 128, H/8, W/8)
+        x5_skip, x5 = self.down4(x4)           # x5_skip: (B, 256, H/8, W/8), x5: (B, 256, H/16, W/16)
+        
+        x_bottleneck = self.bottleneck(x5)     # (B, 256, H/16, W/16)
+        x = self.up1(x_bottleneck, x5_skip)      # Upsample to H/8, channels become 128
+        x = self.up2(x, x4_skip)                 # Upsample to H/4, channels become 64
+        x = self.up3(x, x3_skip)                 # Upsample to H/2, channels become 32
+        x = self.up4(x, x2_skip)                 # Upsample to H, channels become 16
+        x = self.outc(x)
+        return self.out_activation(x)

@@ -266,7 +266,7 @@ def load_data() -> tuple[DataLoader, DataLoader, BPMSDataset]:
     return train_loader, val_loader, dataset
 
 
-def build_sample_dict(sample: dict[str, np.ndarray], dataset: BPMSDataset) -> dict:
+def denornmalise_sample_dict(sample: dict[str, np.ndarray], dataset: BPMSDataset) -> dict:
     """
     Given a list of batches, returns a dictionary with the X and Y samples,
     both in noisy and clean versions after inversion, for each plane.
@@ -290,12 +290,12 @@ def save_global_norm_params(dataset, filepath="global_norm_params.json"):
     """
     Store global min/max for x and y as JSON so we can reload in inference.
     """
-    # They are shape (NBPMS,1), so convert to lists
+    # They are tensors so need to be extracted to numbers
     norm_params = {
-        "min_x": dataset.global_min_x.squeeze(1).tolist(),
-        "max_x": dataset.global_max_x.squeeze(1).tolist(),
-        "min_y": dataset.global_min_y.squeeze(1).tolist(),
-        "max_y": dataset.global_max_y.squeeze(1).tolist(),
+        "min_x": dataset.global_min_x.item(),
+        "max_x": dataset.global_max_x.item(),
+        "min_y": dataset.global_min_y.item(),
+        "max_y": dataset.global_max_y.item(),
     }
     with open(filepath, "w") as f:
         json.dump(norm_params, f, indent=2)

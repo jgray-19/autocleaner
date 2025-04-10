@@ -30,6 +30,7 @@ from ml_models.conv_2d import (
 )
 from ml_models.fno import FNO2d
 from ml_models.unet import (
+    ModifiedUNetFixed,
     UNetAutoencoder,
     UNetAutoencoderFixedDepth,
     UNetAutoencoderFixedDepthCheckpoint,
@@ -89,7 +90,7 @@ class LitAutoencoder(pl.LightningModule):
     def combined_ssp_loss(self, pred, target):
         ssp_loss = self.ssp(pred, target)
         mse_loss = self.mse(pred, target)
-        return ssp_loss + mse_loss
+        return ssp_loss + 10 * mse_loss
 
     def forward(self, x):
         return self.model(x)
@@ -167,6 +168,8 @@ def get_model():
         return UNetAutoencoderFixedDepth()
     elif MODEL_TYPE == "unet_fixed_checkpoint":
         return UNetAutoencoderFixedDepthCheckpoint()
+    elif MODEL_TYPE == "unet_modified":
+        return ModifiedUNetFixed()
     elif MODEL_TYPE == "fno":
         return FNO2d()
     else:

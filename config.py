@@ -4,7 +4,7 @@ from datetime import datetime
 from generic_parser.tools import DotDict
 
 # General Settings
-NUM_NOISY_PER_CLEAN = 10
+NUM_NOISY_PER_CLEAN = 50
 LOAD_MODEL = False
 RESUME_FROM_CKPT = True
 if RESUME_FROM_CKPT:
@@ -24,14 +24,35 @@ if RESUME_FROM_CKPT:
     # CONFIG_NAME = "2025-03-28_22-23-26"
 
     # Now rather than per BPM normalisation, there's a global normalisation
-    CONFIG_NAME = "2025-03-31_09-01-42"
+    # CONFIG_NAME = "2025-03-31_09-01-42"
+
+    # Just trying with a lower learning rate and faster LR decay
+    # CONFIG_NAME = "2025-03-31_10-00-56"
+
+    # Now with a lower learning rate and twice the base channels
+    # CONFIG_NAME = "2025-03-31_12-09-44"
+
+    # Modified architecture, following unet more, adding stride and dilation, while also including final tanh activation layer 
+
+    # Now More data, larger number of turns - Lowered MSE half way through (due to increase in number of turns.)
+    # CONFIG_NAME = "2025-04-01_14-34-38" 
+
+    # unet_fixed
+    # CONFIG_NAME =
+    #  "2025-04-02_11-29-46"
+
+    # Lower learning rate, higher weight decay, moooooore data
+    # CONFIG_NAME = "2025-04-03_22-54-21"
+
+    # Higher learning rate better precision (None - 32)
+    CONFIG_NAME = "2025-04-04_09-58-55"
 else:
     CONFIG_NAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 # Data Settings
 NBPMS = 563
 TOTAL_TURNS = 2000  # Total turns in the simulated data file
-NTURNS = 1000  # Training window length
+NTURNS = 1500  # Training window length
 
 # Various Clean Data Settings
 TUNE_LIST = [
@@ -68,8 +89,8 @@ for beam in BEAMS:
             )
 NUM_PARAMS = len(CLEAN_PARAM_LIST)
 
-BATCH_SIZE = 25
-ACCUMULATE_BATCHES = 4
+BATCH_SIZE = 7
+ACCUMULATE_BATCHES = 15
 TRAIN_RATIO = 0.8
 
 MODEL_SAVE_PATH = "conv_autoencoder.pth"
@@ -77,14 +98,14 @@ NLOGSTEPS = 1
 
 # NUM_PLANES = 2
 NUM_CHANNELS = 1
-PRECISION = "16-mixed"
+PRECISION = None#"16-mixed"
 
-NUM_EPOCHS = 1500
+NUM_EPOCHS = 300
 BOTTLENECK_SIZE = 4
-BASE_CHANNELS = 4
+BASE_CHANNELS = 8
 
 LEARNING_RATE = 1e-4
-WEIGHT_DECAY = 1e-4
+WEIGHT_DECAY = 1e-3
 
 ALPHA = 0.5
 
@@ -95,7 +116,7 @@ NONOISE_INDEX = "zero_noise"
 
 # NOISE_FACTORS = [1e-3, 9e-4, 8e-4, 7e-4, 6e-4, 5e-4, 4e-4, 3e-4, 2e-4, 1e-4, 5e-5]
 # NOISE_FACTORS = [1e-3, 5e-4, 1e-4, 5e-5]
-NOISE_FACTORS = [1e-3]
+NOISE_FACTORS = [5e-4]
 
 # MODEL_TYPE = "leaky"
 MODEL_TYPE = "unet_fixed"
@@ -109,7 +130,7 @@ MIN_LR = 1e-5
 
 INIT = "xavier"
 DATA_SCALING = "minmax"
-MISSING_PROB = 2e-2
+MISSING_PROB = 1e-3 # 0.1 %
 
 experiment_config = {
     "accumulate_batches": ACCUMULATE_BATCHES,
