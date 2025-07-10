@@ -1,5 +1,5 @@
-from pathlib import Path
 import json
+from pathlib import Path
 
 import torch
 from turn_by_turn.lhc import read_tbt
@@ -11,17 +11,16 @@ from pl_module import get_model
 
 def load_global_norm_params(filepath="global_norm_params.json"):
     """
-    Load global min/max for x and y from a JSON file.
+    Load global mean/std for x and y from a JSON file.
     """
     with open(filepath, "r") as f:
         norm_params = json.load(f)
 
-    # Convert lists back to Tensors shaped (NBPMS,1)
-    global_min_x = torch.tensor(norm_params["min_x"]).unsqueeze(1)
-    global_max_x = torch.tensor(norm_params["max_x"]).unsqueeze(1)
-    global_min_y = torch.tensor(norm_params["min_y"]).unsqueeze(1)
-    global_max_y = torch.tensor(norm_params["max_y"]).unsqueeze(1)
-    return global_min_x, global_max_x, global_min_y, global_max_y
+    global_mean_x = norm_params["mean_x"]
+    global_std_x = norm_params["std_x"]
+    global_mean_y = norm_params["mean_y"]
+    global_std_y = norm_params["std_y"]
+    return global_mean_x, global_std_x, global_mean_y, global_std_y
 
 
 def denoise_tbt(
@@ -51,21 +50,23 @@ def denoise_tbt(
     # --- Load the noisy TBT data ---
     tbt_data = read_tbt(noisy_tbt_path)
     # Get the X and Y data and β-scale them (like in load_clean_data)
-    x_data = tbt_data.matrices[0].X.to_numpy() 
-    y_data = tbt_data.matrices[0].Y.to_numpy() 
+    x_data = tbt_data.matrices[0].X.to_numpy()
+    y_data = tbt_data.matrices[0].Y.to_numpy()
 
     assert x_data.shape[0] == NBPMS, "Missing some BPMs"
     assert y_data.shape[0] == NBPMS, "Missing some BPMs"
 
-    x_data /= sqrt_betax[:, None] 
+    x_data /= sqrt_betax[:, None]
     y_data /= sqrt_betay[:, None]
 
     # --- Load global normalization parameters ---
-    global_min_x, global_max_x, global_min_y, global_max_y = load_global_norm_params(norm_params_path)
+    global_mean_x, global_std_x, global_mean_y, global_std_y = load_global_norm_params(
+        norm_params_path
+    )
 
-    # --- Normalize noisy data using global stats ---
-    norm_x = 2 * (x_data - global_min_x) / (global_max_x - global_min_x) - 1
-    norm_y = 2 * (y_data - global_min_y) / (global_max_y - global_min_y) - 1
+    # --- Normalize noisy data using global stats (z-score normalization) ---
+    norm_x = (x_data - global_mean_x) / global_std_x
+    norm_y = (y_data - global_mean_y) / global_std_y
 
     # Convert from shape (NBPMS, NTURNS) to (1, 1, NBPMS, NTURNS)
     noisy_norm_x = torch.tensor(norm_x, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
@@ -87,9 +88,9 @@ def denoise_tbt(
     recon_x = recon_x.squeeze(0).squeeze(0).detach().cpu().numpy()
     recon_y = recon_y.squeeze(0).squeeze(0).detach().cpu().numpy()
 
-    # --- Inverse normalization ---
-    recon_x = (recon_x + 1) * 0.5 * (global_max_x - global_min_x) + global_min_x
-    recon_y = (recon_y + 1) * 0.5 * (global_max_y - global_min_y) + global_min_y
+    # --- Inverse normalization (z-score denormalization) ---
+    recon_x = recon_x * global_std_x + global_mean_x
+    recon_y = recon_y * global_std_y + global_mean_y
 
     # --- Write the cleaned data ---
     cleaned_file_path, _ = write_data(recon_x, recon_y, model_dir, denoised_tbt_path)

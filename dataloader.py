@@ -59,8 +59,9 @@ def write_data(
     y_data: torch.Tensor,
     model_dir: Path,
     tbt_path: Path,
+    nturns: int = NTURNS,
 ) -> tuple[Path, TbtData]:
-    model_dat = tfs.read(model_dir / "twiss.dat", index="NAME")
+    model_dat = tfs.read(model_dir / "twiss.tfs.bz2", index="NAME")
     # sqrt_betax = np.sqrt(model_dat["BETX"].values)
     # sqrt_betay = np.sqrt(model_dat["BETY"].values)
     # For now, let's not normalise the data.
@@ -83,9 +84,10 @@ def write_data(
             Y=pd.DataFrame(index=y_bpm_names, data=y_data, dtype=float),
         )
     ]
-    out_data = TbtData(matrices=matrices, nturns=NTURNS)
+    out_data = TbtData(matrices=matrices, nturns=nturns)
     write_tbt(tbt_path, out_data)
     return tbt_path, out_data
+
 
 def cyclic_slice_bpm_turns(raw_tensor: torch.Tensor) -> torch.Tensor:
     """
@@ -100,17 +102,16 @@ def cyclic_slice_bpm_turns(raw_tensor: torch.Tensor) -> torch.Tensor:
     flat = transposed.reshape(-1)
 
     # Step 3: Choose one random offset (covering both BPM and turn offsets) and roll.
-    offset = np.random.randint(0, (TOTAL_TURNS - NTURNS) * NBPMS-1)
+    offset = np.random.randint(0, (TOTAL_TURNS - NTURNS) * NBPMS - 1)
     flat_shifted = torch.roll(flat, shifts=-offset)
 
     # Step 4: Reshape back and transpose so that the output is (NBPMS, window_length).
     # The flat vector is reshaped into (window_length, NBPMS) then transposed.
     shifted = flat_shifted.reshape(TOTAL_TURNS, -1).t()
-    
+
     # We only want the first NTURNS turns.
     shifted = shifted[:, :NTURNS]
     return shifted
-
 
 
 class BPMSDataset(Dataset):
@@ -134,10 +135,14 @@ class BPMSDataset(Dataset):
         # Load all clean files once into big lists so we never do it in __getitem__
         all_clean_x = []
         all_clean_y = []
-        self.global_min_x = torch.inf
-        self.global_max_x = 0
-        self.global_min_y = torch.inf
-        self.global_max_y = 0
+        self.global_mean_x = 0.0
+        self.global_std_x = 1.0
+        self.global_mean_y = 0.0
+        self.global_std_y = 1.0
+
+        # First pass: collect all data to compute global statistics
+        all_data_x = []
+        all_data_y = []
 
         for params in self.clean_param_list:
             sdds_data_path = get_tbt_path(
@@ -157,11 +162,23 @@ class BPMSDataset(Dataset):
             # Each is shape (NBPMS, TOTAL_TURNS)
             all_clean_x.append(clean_x)
             all_clean_y.append(clean_y)
+            all_data_x.append(clean_x)
+            all_data_y.append(clean_y)
 
-            self.global_min_x = min(self.global_min_x, clean_x.min())
-            self.global_max_x = max(self.global_max_x, clean_x.max())
-            self.global_min_y = min(self.global_min_y, clean_y.min())
-            self.global_max_y = max(self.global_max_y, clean_y.max())
+        # Compute global mean and std across all data
+        all_x_data = torch.cat(all_data_x, dim=1)  # Concatenate along turns dimension
+        all_y_data = torch.cat(all_data_y, dim=1)  # Concatenate along turns dimension
+
+        self.global_mean_x = all_x_data.mean()
+        self.global_std_x = all_x_data.std()
+        self.global_mean_y = all_y_data.mean()
+        self.global_std_y = all_y_data.std()
+
+        # Ensure std is not zero to avoid division by zero
+        if self.global_std_x == 0:
+            self.global_std_x = 1.0
+        if self.global_std_y == 0:
+            self.global_std_y = 1.0
 
         # Now store each file's raw data (still in memory) so we can quickly sample from it
         # We'll keep them separate from the big concatenated arrays for clarity.
@@ -200,20 +217,21 @@ class BPMSDataset(Dataset):
         window_x = cyclic_slice_bpm_turns(raw_x)
         window_y = cyclic_slice_bpm_turns(raw_y)
 
-        # Normalize using global min/max.
-        norm_slice_x = 2.0 * (window_x - self.global_min_x) / (self.global_max_x - self.global_min_x) - 1.0
-        norm_slice_y = 2.0 * (window_y - self.global_min_y) / (self.global_max_y - self.global_min_y) - 1.0
+        # Add noise in raw domain (before normalization for physical consistency)
+        noise_x = torch.randn_like(window_x) * noise_factor
+        noise_y = torch.randn_like(window_y) * noise_factor
+        noisy_window_x = window_x + noise_x
+        noisy_window_y = window_y + noise_y
 
-        # Add noise in normalized domain
-        noise_x = torch.randn_like(norm_slice_x) * noise_factor
-        noise_y = torch.randn_like(norm_slice_y) * noise_factor
-        noisy_slice_x = norm_slice_x + noise_x
-        noisy_slice_y = norm_slice_y + noise_y
+        # Normalize using global mean/std (z-score normalization).
+        norm_slice_x = (window_x - self.global_mean_x) / self.global_std_x
+        norm_slice_y = (window_y - self.global_mean_y) / self.global_std_y
+        noisy_slice_x = (noisy_window_x - self.global_mean_x) / self.global_std_x
+        noisy_slice_y = (noisy_window_y - self.global_mean_y) / self.global_std_y
 
         # Missing BPM simulation
-        mask = torch.rand(NBPMS) < MISSING_PROB
-        noisy_slice_x[mask, :] = 0
-        noisy_slice_y[mask, :] = 0
+        noisy_slice_x[torch.rand(NBPMS) < MISSING_PROB, :] = 0
+        noisy_slice_y[torch.rand(NBPMS) < MISSING_PROB, :] = 0
 
         # Add the channel dimension
         # The final shape of the tensors is (1, NBPMS, NTURNS)
@@ -235,20 +253,20 @@ class BPMSDataset(Dataset):
             raise ValueError("Plane must be 'x' or 'y'.")
 
         if plane == "x":
-            min_val = norm_info["min_x"].item()
-            max_val = norm_info["max_x"].item()
+            mean_val = norm_info["mean_x"].item()
+            std_val = norm_info["std_x"].item()
             # betas = norm_info["sqrt_betax"]
         else:
-            min_val = norm_info["min_y"].item()
-            max_val = norm_info["max_y"].item()
+            mean_val = norm_info["mean_y"].item()
+            std_val = norm_info["std_y"].item()
             # betas = norm_info["sqrt_betay"]
 
-        # Inverse min–max scaling.
-        orig_data = (norm_data + 1) / 2 * (max_val - min_val) + min_val
+        # Inverse z-score normalization.
+        orig_data = norm_data * std_val + mean_val
         return orig_data  # * betas[:, None]
 
 
-def load_data() -> tuple[DataLoader, DataLoader, BPMSDataset]:
+def load_data(num_workers: int = 4) -> tuple[DataLoader, DataLoader, BPMSDataset]:
     dataset = BPMSDataset(
         clean_param_list=CLEAN_PARAM_LIST, num_variations_per_clean=NUM_NOISY_PER_CLEAN
     )
@@ -258,10 +276,18 @@ def load_data() -> tuple[DataLoader, DataLoader, BPMSDataset]:
         dataset, [train_size, val_size]
     )
     train_loader = DataLoader(
-        train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4
+        train_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=num_workers,
+        persistent_workers=True,
     )
     val_loader = DataLoader(
-        val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4
+        val_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        num_workers=num_workers,
+        persistent_workers=True,
     )
     return train_loader, val_loader, dataset
 
@@ -288,14 +314,13 @@ def denornmalise_sample_dict(sample: dict[str, np.ndarray], dataset: BPMSDataset
 
 def save_global_norm_params(dataset, filepath="global_norm_params.json"):
     """
-    Store global min/max for x and y as JSON so we can reload in inference.
+    Store global mean/std for x and y as JSON so we can reload in inference.
     """
-    # They are tensors so need to be extracted to numbers
     norm_params = {
-        "min_x": dataset.global_min_x.item(),
-        "max_x": dataset.global_max_x.item(),
-        "min_y": dataset.global_min_y.item(),
-        "max_y": dataset.global_max_y.item(),
+        "mean_x": dataset.global_mean_x.item(),
+        "std_x": dataset.global_std_x.item(),
+        "mean_y": dataset.global_mean_y.item(),
+        "std_y": dataset.global_std_y.item(),
     }
     with open(filepath, "w") as f:
         json.dump(norm_params, f, indent=2)

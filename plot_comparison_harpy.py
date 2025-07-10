@@ -30,10 +30,10 @@ rdts = [  # Normal Sextupole
 
 # Define noise levels
 noise_levels = [1e-4, 2.5e-4, 5e-4, 1e-3]
-# noise_levels = [1e-4, 1e-3] # 
+# noise_levels = [1e-4, 1e-3] #
 plot_dir = PLOT_DIR / "harpy"
 plot_dir.mkdir(exist_ok=True)
-    
+
 
 # RDTs to plot separately
 rdts_to_plot = ["f3000_x", "f1011_y"]
@@ -50,10 +50,12 @@ for i, noise in enumerate(noise_levels):
     print("Cleaned file written to:", auto_cleaned_file)
 
     # Run Harpy analysis for the three cases
-    noise_dfs["noisy"], _ = run_harpy_analysis(tbt_file         , rdts=rdts            , turn_bits=12)
+    noise_dfs["noisy"], _ = run_harpy_analysis(tbt_file, rdts=rdts, turn_bits=12)
     # noise_dfs["clean"], _ = run_harpy_analysis(tbt_file_clean   , rdts=rdts, clean=True, turn_bits=12)
-    noise_dfs["zero"], _  = run_harpy_analysis(tbt_file_zero    , rdts=rdts            , turn_bits=12)
-    noise_dfs["auto"], _  = run_harpy_analysis(auto_cleaned_file, rdts=rdts            , turn_bits=12)
+    noise_dfs["zero"], _ = run_harpy_analysis(tbt_file_zero, rdts=rdts, turn_bits=12)
+    noise_dfs["auto"], _ = run_harpy_analysis(
+        auto_cleaned_file, rdts=rdts, turn_bits=12
+    )
     rdt_dfs[noise] = noise_dfs
 
 plt.rcParams.update({"font.size": 22})
@@ -101,7 +103,7 @@ for amp_or_phase in ["AMP", "PHASE"]:
             axs[i].set_title(f"Noise Level: {format_noise(noise)}")
             for label, props in data_dict.items():
                 avg_err_label = ""
-                if "avg_err" in props: 
+                if "avg_err" in props:
                     if label == "Autoencoder Denoised":
                         avg_err_label = f"\n(Avg err: {props['avg_err']:.2%}\nReduction in err: {diff.abs().mean() - props['avg_err']:.2%})"
                     else:

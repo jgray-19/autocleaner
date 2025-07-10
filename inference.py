@@ -57,12 +57,10 @@ def denoise_validation_sample_from_checkpoint(
         f"Building '{MODEL_TYPE}' model and loading checkpoint on CPU from: {checkpoint_name}"
     )
     # 1) Build the model and load checkpoint weights on CPU
-    checkpoint_path = (
-        Path("/home/jovyan/tensor-logs/") / checkpoint_name / "checkpoints"
-    )
+    checkpoint_path = Path("tensor-logs/") / checkpoint_name / "checkpoints"
     checkpoint_file = find_newest_file(checkpoint_path)
     lit_model = LitAutoencoder.load_from_checkpoint(
-        checkpoint_path=checkpoint_path / checkpoint_file,
+        checkpoint_path=checkpoint_file,
         model=get_model(),
         loss_type=LOSS_TYPE,
         learning_rate=LEARNING_RATE,
@@ -105,10 +103,10 @@ def denoise_validation_sample_from_checkpoint(
 
     # 4) Build a sample_dict for the first item in the batch
     norm_info = {
-        "min_x": dataset.global_min_x,
-        "max_x": dataset.global_max_x,
-        "min_y": dataset.global_min_y,
-        "max_y": dataset.global_max_y,
+        "mean_x": dataset.global_mean_x,
+        "std_x": dataset.global_std_x,
+        "mean_y": dataset.global_mean_y,
+        "std_y": dataset.global_std_y,
     }
     # Save global normalization parameters
     save_global_norm_params(dataset, filepath="global_norm_params.json")
@@ -145,20 +143,19 @@ def denoise_validation_sample_from_checkpoint(
 #   dataset (BPMSDataset),
 #   and a path to your checkpoint: my_ckpt_path
 
-print("Loading data...")
-b4_load = time.time()
-train_loader, val_loader, dataset = load_data()
-print(f"Data loaded. Took {time.time() - b4_load:.2f} seconds.")
+if __name__ == "__main__":
+    print("Loading data...")
+    b4_load = time.time()
+    train_loader, val_loader, dataset = load_data(num_workers=1)
+    print(f"Data loaded. Took {time.time() - b4_load:.2f} seconds.")
 
-
-sample_dict = denoise_validation_sample_from_checkpoint(
-    checkpoint_name=CONFIG_NAME,
-    # checkpoint_name="2025-03-31_10-00-56",
-    # checkpoint_name="2025-03-27_16-43-06",
-    # checkpoint_name="2025-03-27_16-54-52",
-    val_loader=val_loader,
-    dataset=dataset,
-    residuals=False,
-    device_index=111,
-    do_plot=True,
-)
+    sample_dict = denoise_validation_sample_from_checkpoint(
+        checkpoint_name=CONFIG_NAME,
+        # checkpoint_name="2025-03-27_16-43-06",
+        # checkpoint_name="2025-03-27_16-54-52",
+        val_loader=val_loader,
+        dataset=dataset,
+        residuals=False,
+        device_index=111,
+        do_plot=True,
+    )
