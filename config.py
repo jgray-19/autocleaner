@@ -1,56 +1,58 @@
 import json
 import os
 from datetime import datetime
+
 from generic_parser.tools import DotDict
 
 # General Settings
-NUM_NOISY_PER_CLEAN = 10
+NUM_NOISY_PER_CLEAN = 150
 LOAD_MODEL = False
-RESUME_FROM_CKPT = True
-if RESUME_FROM_CKPT:
-    # CONFIG_NAME = "2025-03-21_09-20-38"
-    # CONFIG_NAME = "2025-03-25_12-35-50" # Now using many datas
-    # Lower learning rate
-    # Even lower learning rate. 
-    # Lower noise and lower learning rate
-    # Higher learning rate more batches
-    # CONFIG_NAME = "2025-03-25_15-19-35"
-    # Now I fixed the nbpms (was using 1 BPM then using beta functions to create all the bpms)
-    # CONFIG_NAME = "2025-03-27_11-04-33"
-    # Now I fixed the noises being linked to the clean data, it should all be randomly distributed. 
-    # CONFIG_NAME = "2025-03-27_16-43-06"
-    # CONFIG_NAME = "2025-03-27_16-54-52" # Smaller size of module
-    # Even smaller base channels as the autoencoder is still learning the different tunes. 
-    # CONFIG_NAME = "2025-03-28_22-23-26"
+RESUME_FROM_CKPT = False
+NUM_EPOCHS = 1000
 
-    # Now rather than per BPM normalisation, there's a global normalisation
-    CONFIG_NAME = "2025-03-31_09-01-42"
+if RESUME_FROM_CKPT:
+    # CONFIG_NAME = "2025-07-04_17-52-43" # 1000 mseloss
+    # CONFIG_NAME = "2025-07-05_21-47-29" # 1_000_000 mseloss
+    # CONFIG_NAME = "2025-07-06_00-34-00"  # Just mse, no ssp
+    # CONFIG_NAME = "2025-07-06_01-27-53"  # 0 missing prob, 1e-4 noise, mse loss
+
+    # CONFIG_NAME = "2025-07-06_18-00-02"
+    # CONFIG_NAME = "2025-07-07_18-32-46"  # Better learning rate scheduler
+
+    # CONFIG_NAME = "2025-07-09_08-45-04"
+    CONFIG_NAME = "2025-07-10_10-57-09"  # Better scheduler, only 1e-4 noise, batch size 1000 (from 400)
 else:
     CONFIG_NAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 # Data Settings
 NBPMS = 563
 TOTAL_TURNS = 2000  # Total turns in the simulated data file
-NTURNS = 1000  # Training window length
+NTURNS = 1500  # Training window length
 
 # Various Clean Data Settings
 TUNE_LIST = [
     # [0.07, 0.06],
-    [0.19, 0.18],
-    [0.26, 0.27],
+    # [0.19, 0.18],
+    # [0.26, 0.27],
     [0.27, 0.28],
+    # [0.27, 0.29],
+    # [0.27, 0.31],
+    # [0.27, 0.32],
     [0.28, 0.29],
+    [0.28, 0.31],
+    [0.28, 0.32],
     [0.29, 0.31],
-    [0.32, 0.31],
+    [0.29, 0.32],
     [0.31, 0.32],
-    [0.43, 0.49],
-    [0.74, 0.73],
+    # [0.32, 0.31],
+    # [0.43, 0.49],
+    # [0.74, 0.73],
     [0.72, 0.69],
     [0.71, 0.68],
     [0.69, 0.68],
 ]
-COUPLING = [False, 1e-4, 1e-3]
-KICK_AMPS = [5e-5, 1e-4, 2e-4]
+COUPLING = [False]  # , 1e-4, 1e-3]
+KICK_AMPS = [1e-4]
 
 BEAMS = [1]
 CLEAN_PARAM_LIST = []
@@ -65,11 +67,13 @@ for beam in BEAMS:
                         "coupling": coupling,
                         "kick_amp": kick_amp,
                     }
-            )
+                )
 NUM_PARAMS = len(CLEAN_PARAM_LIST)
 
-BATCH_SIZE = 25
-ACCUMULATE_BATCHES = 4
+BATCH_SIZE = 2
+ACCUMULATE_BATCHES = (
+    NUM_PARAMS * NUM_NOISY_PER_CLEAN // (BATCH_SIZE * 2)
+)  # 2 so I get 2 logs per epoch
 TRAIN_RATIO = 0.8
 
 MODEL_SAVE_PATH = "conv_autoencoder.pth"
@@ -79,11 +83,10 @@ NLOGSTEPS = 1
 NUM_CHANNELS = 1
 PRECISION = "16-mixed"
 
-NUM_EPOCHS = 1500
 BOTTLENECK_SIZE = 4
-BASE_CHANNELS = 4
+BASE_CHANNELS = 12
 
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-4
 
 ALPHA = 0.5
@@ -95,7 +98,7 @@ NONOISE_INDEX = "zero_noise"
 
 # NOISE_FACTORS = [1e-3, 9e-4, 8e-4, 7e-4, 6e-4, 5e-4, 4e-4, 3e-4, 2e-4, 1e-4, 5e-5]
 # NOISE_FACTORS = [1e-3, 5e-4, 1e-4, 5e-5]
-NOISE_FACTORS = [1e-3]
+NOISE_FACTORS = [1e-4]
 
 # MODEL_TYPE = "leaky"
 MODEL_TYPE = "unet_fixed"
@@ -104,12 +107,14 @@ RESIDUALS = False
 
 LOSS_TYPE = "comb_ssp"
 # LOSS_TYPE = "mse"
-SCHEDULER = False
+SCHEDULER = True
 MIN_LR = 1e-5
+NUM_CONSTANT_LR_EPOCHS = 50
+NUM_DECAY_EPOCHS = 1000
 
 INIT = "xavier"
-DATA_SCALING = "minmax"
-MISSING_PROB = 2e-2
+DATA_SCALING = "meanstd"
+MISSING_PROB = 0
 
 experiment_config = {
     "accumulate_batches": ACCUMULATE_BATCHES,

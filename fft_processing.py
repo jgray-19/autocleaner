@@ -1,15 +1,17 @@
 import numpy as np
 import torch
 from omc3.harpy.frequency import get_freq_mask, windowing
-from config import NTURNS, HARPY_INPUT
+
+from config import HARPY_INPUT, NTURNS
+
 
 window = windowing(NTURNS, window="hann")
 window = torch.tensor(window, dtype=torch.float64)
 
 
 def windowed_padded_rfft_torch(
-        matrix: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    matrix: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Calculates the spectra using specified windowing function and zero-padding with PyTorch tensors.
 
@@ -21,13 +23,13 @@ def windowed_padded_rfft_torch(
     Returns:
         Tuple of `torch.Tensor` for frequencies and coefficients.
     """
-    matrix = matrix.T # Transpose matrix to have turns as rows
+    matrix = matrix.T  # Transpose matrix to have turns as rows
     tunes = HARPY_INPUT["tunes"]
 
     # Define lengths for padding and output
     padded_len = 2 ** HARPY_INPUT["turn_bits"]
     output_len = 2 ** HARPY_INPUT["output_bits"]
-    sub_bins = padded_len // output_len 
+    sub_bins = padded_len // output_len
 
     # Get frequency mask
     HARPY_INPUT["turn_bits"] = int(np.log2(padded_len))
@@ -61,13 +63,15 @@ def windowed_padded_rfft_torch(
 
     return frequencies, coefficients
 
+
 def calculate_fft_and_amps(data: np.ndarray):
     data = torch.tensor(data, dtype=torch.float32)
     freqs, amps = windowed_padded_rfft_torch(data.T)
-    return freqs, normalize_and_log(amps)
+    return freqs, normalise_and_log(amps)
+
 
 # Function to normalize and log amplitudes
-def normalize_and_log(amps):
+def normalise_and_log(amps):
     amps = torch.abs(amps)
     amps = amps / amps.max(dim=1, keepdim=True)[0]
     return torch.log10(amps).numpy()

@@ -1,9 +1,9 @@
 import matplotlib.pyplot as plt
-import torch
 import turn_by_turn as tbt
-from torchviz import make_dot
+
+# from torchviz import make_dot
 from lhcng.config import PLOT_DIR
-from config import CONFIG_NAME, NBPMS, NTURNS, NUM_CHANNELS
+from config import CONFIG_NAME  # , NBPMS, NTURNS, NUM_CHANNELS
 from fft_processing import calculate_fft_and_amps
 
 COLOURS = [
@@ -17,6 +17,7 @@ COLOURS = [
     "#000000",  # Black
 ]
 plt.rcParams.update({"font.size": 16})
+
 
 # Function to convert linear ticks to 10^x format
 def log_format(y, pos):
@@ -271,33 +272,33 @@ def plot_noisy_data(noisy, clean, bpm_index):
     plt.show()
 
 
-def plot_model_architecture(
-    model, input_size=(NUM_CHANNELS, NBPMS, NTURNS), filename="model_architecture"
-):
-    """
-    Generates a .png file showing the model architecture using torchviz.
+# def plot_model_architecture(
+#     model, input_size=(NUM_CHANNELS, NBPMS, NTURNS), filename="model_architecture"
+# ):
+#     """
+#     Generates a .png file showing the model architecture using torchviz.
 
-    Args:
-        model: Your PyTorch model.
-        input_size (tuple): Shape of a single input sample, excluding batch size.
-        filename (str): The desired filename (without extension) for the saved plot.
+#     Args:
+#         model: Your PyTorch model.
+#         input_size (tuple): Shape of a single input sample, excluding batch size.
+#         filename (str): The desired filename (without extension) for the saved plot.
 
-    Returns:
-        None (it saves a PNG file of the model graph to your working directory).
-    """
-    # Create a dummy input tensor with batch size = 1
-    dummy_input = torch.randn(1, *input_size)
+#     Returns:
+#         None (it saves a PNG file of the model graph to your working directory).
+#     """
+#     # Create a dummy input tensor with batch size = 1
+#     dummy_input = torch.randn(1, *input_size)
 
-    # Forward pass to build the computation graph
-    output = model(dummy_input)
+#     # Forward pass to build the computation graph
+#     output = model(dummy_input)
 
-    # Use make_dot to create the graph
-    dot_graph = make_dot(output, params=dict(model.named_parameters()))
+#     # Use make_dot to create the graph
+#     dot_graph = make_dot(output, params=dict(model.named_parameters()))
 
-    # Save the graph to a .png file
-    dot_graph.format = "png"
-    dot_graph.render(filename, cleanup=True)
-    print(f"Model architecture diagram saved as {filename}.png")
+#     # Save the graph to a .png file
+#     dot_graph.format = "png"
+#     dot_graph.render(filename, cleanup=True)
+#     print(f"Model architecture diagram saved as {filename}.png")
 
 
 def load_tbt_tensor(tbt_file_path):
