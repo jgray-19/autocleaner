@@ -7,7 +7,8 @@ from pathlib import Path
 
 import tfs
 import turn_by_turn as tbt
-from lhcng.config import ACC_MODELS
+
+# from lhcng.config import ACC_MODELS
 from lhcng.model import create_model_dir, get_model_dir
 from lhcng.tracking import get_tbt_path, get_tfs_path, run_tracking
 from turn_by_turn import madng
@@ -24,7 +25,7 @@ log = logging.getLogger(__name__)
 create_model = False
 do_track = True
 
-nturns = 1000
+nturns = 3000
 random.seed(42)
 
 # Create a list of tunes for the fake measurement
@@ -32,30 +33,30 @@ random.seed(42)
 # x -> 0.26 to 0.32
 # y -> 0.26 to 0.32
 tune_list = [
-    [0.07, 0.06],
-    [0.19, 0.18],
-    [0.26, 0.27],
+    # [0.07, 0.06],
+    # [0.19, 0.18],
+    # [0.26, 0.27],
     [0.27, 0.28],
-    [0.27, 0.29],
-    [0.27, 0.31],
-    [0.27, 0.32],
+    # [0.27, 0.29],
+    # [0.27, 0.31],
+    # [0.27, 0.32],
     [0.28, 0.29],
     [0.28, 0.31],
     [0.28, 0.32],
     [0.29, 0.31],
     [0.29, 0.32],
     [0.31, 0.32],
-    [0.32, 0.31],
-    [0.43, 0.49],
-    [0.74, 0.73],
+    # [0.32, 0.31],
+    # [0.43, 0.49],
+    # [0.74, 0.73],
     [0.72, 0.69],
     [0.71, 0.68],
     [0.69, 0.68],
 ]
 coupling = [
     False,
-    1e-4,
-    1e-3,
+    # 1e-4,
+    # 1e-3,
     # 3e-3,
 ]
 

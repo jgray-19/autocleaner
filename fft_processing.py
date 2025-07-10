@@ -4,7 +4,6 @@ from omc3.harpy.frequency import get_freq_mask, windowing
 
 from config import HARPY_INPUT, NTURNS
 
-
 window = windowing(NTURNS, window="hann")
 window = torch.tensor(window, dtype=torch.float64)
 

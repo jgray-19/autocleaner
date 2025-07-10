@@ -26,7 +26,7 @@ from config import (
     print_config,
     save_experiment_config,
 )
-from dataloader import denornmalise_sample_dict, load_data, save_global_norm_params
+from dataloader import denormalise_sample_dict, load_data, save_global_norm_params
 from pl_module import (
     LitAutoencoder,
     # NoiseAnnealingCallback,
@@ -154,7 +154,7 @@ if __name__ == "__main__":
         "norm_info": norm_info,
     }
 
-    sample_dict = build_sample_dict(sample, dataset)
+    sample_dict = denormalise_sample_dict(sample, dataset)
 
     device_index = 111  # Select a BPM to plot the FFT spectrum
     print(f"Denoised Data for Device {device_index}")

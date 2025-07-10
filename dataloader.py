@@ -292,7 +292,9 @@ def load_data(num_workers: int = 4) -> tuple[DataLoader, DataLoader, BPMSDataset
     return train_loader, val_loader, dataset
 
 
-def denornmalise_sample_dict(sample: dict[str, np.ndarray], dataset: BPMSDataset) -> dict:
+def denormalise_sample_dict(
+    sample: dict[str, np.ndarray], dataset: BPMSDataset
+) -> dict:
     """
     Given a list of batches, returns a dictionary with the X and Y samples,
     both in noisy and clean versions after inversion, for each plane.

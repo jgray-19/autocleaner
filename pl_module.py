@@ -8,8 +8,12 @@ from pytorch_lightning.callbacks import Callback
 
 from config import (
     ALPHA,
+    # KICK_AMPS,
+    # LEARNING_RATE,
     MIN_LR,
     MODEL_TYPE,
+    NUM_CONSTANT_LR_EPOCHS,
+    NUM_DECAY_EPOCHS,
     NUM_EPOCHS,
     RESIDUALS,
     SCHEDULER,
@@ -37,18 +41,21 @@ from ml_models.unet import (
 )
 
 
-class NoiseAnnealingCallback(Callback): 
-    def __init__(self, initial_multiplier=1.0, final_multiplier=0.1, max_epochs=NUM_EPOCHS): 
+class NoiseAnnealingCallback(Callback):
+    def __init__(
+        self, initial_multiplier=1.0, final_multiplier=0.1, max_epochs=NUM_EPOCHS
+    ):
         super().__init__()
-        self.initial_multiplier = initial_multiplier 
-        self.final_multiplier = final_multiplier 
+        self.initial_multiplier = initial_multiplier
+        self.final_multiplier = final_multiplier
         self.max_epochs = max_epochs
 
     def on_train_epoch_start(self, trainer, pl_module):
         # Compute a new multiplier (for example, a linear schedule)
         current_epoch = trainer.current_epoch
         new_multiplier = self.initial_multiplier - (
-            (self.initial_multiplier - self.final_multiplier) * (current_epoch / self.max_epochs)
+            (self.initial_multiplier - self.final_multiplier)
+            * (current_epoch / self.max_epochs)
         )
 
         # Update the dataset's noise multiplier.
@@ -97,28 +104,38 @@ class LitAutoencoder(pl.LightningModule):
 
     def get_batch_loss(self, batch):
         # Concatenate along batch dimension (assuming shape (B, 1, NBPMS, NTURNS))
-        combined_noisy = torch.cat([batch["noisy_x"], batch["noisy_y"]], dim=0)
-        combined_clean = torch.cat([batch["clean_x"], batch["clean_y"]], dim=0)
-        combined_batch_size = combined_noisy.size(0)
+        # combined_noisy = torch.cat([batch["noisy_x"], batch["noisy_y"]], dim=0)
+        # combined_clean = torch.cat([batch["clean_x"], batch["clean_y"]], dim=0)
+        # combined_batch_size = combined_noisy.size(0)
 
         # Optionally shuffle the combined batch here (if your DataLoader doesn’t already shuffle individual samples)
-        perm = torch.randperm(combined_batch_size)
-        combined_noisy = combined_noisy[perm]
-        combined_clean = combined_clean[perm]
+        # perm = torch.randperm(combined_batch_size)
+        # combined_noisy = combined_noisy[perm]
+        # combined_clean = combined_clean[perm]
 
         # Process through the model
-        combined_recon = self(combined_noisy)
+        # combined_recon = self(combined_noisy)
+
+        recon_x = self(batch["noisy_x"])
+        recon_y = self(batch["noisy_y"])
 
         if RESIDUALS:
-            loss = self.loss_fn(combined_noisy - combined_recon, combined_clean)
+            loss_x = self.loss_fn(batch["noisy_x"] - recon_x, batch["clean_x"])
+            loss_y = self.loss_fn(batch["noisy_y"] - recon_y, batch["clean_y"])
+            loss = (loss_x + loss_y) / 2
         else:
-            loss = self.loss_fn(combined_recon, combined_clean)
+            # loss = self.loss_fn(combined_recon, combined_clean)
+            loss_x = self.loss_fn(recon_x, batch["clean_x"])
+            loss_y = self.loss_fn(recon_y, batch["clean_y"])
+            loss = (loss_x + loss_y) / 2
 
-        return loss, combined_batch_size
+        return loss, batch["noisy_x"].size(0) + batch["noisy_y"].size(0)
 
     def training_step(self, batch, batch_idx):
         loss, combined_batch_size = self.get_batch_loss(batch)
+        current_lr = self.trainer.optimizers[0].param_groups[0]["lr"]
         self.log("train_loss", loss, batch_size=combined_batch_size)
+        self.log("lr", current_lr, on_step=False, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -127,17 +144,35 @@ class LitAutoencoder(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        optimizer = optim.AdamW(
+        optimiser = optim.AdamW(
             self.model.parameters(),
             lr=self.learning_rate,
             weight_decay=self.weight_decay,
         )
         if SCHEDULER:
-            scheduler = optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, eta_min=MIN_LR, T_max=NUM_EPOCHS
+            scheduler1 = optim.lr_scheduler.ConstantLR(
+                optimiser, factor=1, total_iters=NUM_CONSTANT_LR_EPOCHS
             )
-            return [optimizer], [scheduler]
-        return optimizer
+            scheduler2 = optim.lr_scheduler.CosineAnnealingLR(
+                optimiser, T_max=NUM_DECAY_EPOCHS, eta_min=MIN_LR
+            )
+            scheduler = optim.lr_scheduler.SequentialLR(
+                optimiser,
+                schedulers=[scheduler1, scheduler2],
+                # switch from scheduler1 → scheduler2 after so many epochs
+                milestones=[NUM_CONSTANT_LR_EPOCHS],
+            )
+            return {
+                "optimizer": optimiser,
+                "lr_scheduler": {
+                    "scheduler": scheduler,
+                    "interval": "epoch",  # call .step() every epoch
+                    "frequency": 1,
+                    "name": "lr",
+                },
+            }
+        else:
+            return {"optimizer": optimiser}
 
 
 def find_newest_file(directory_path):

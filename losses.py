@@ -187,13 +187,13 @@ class SSPLoss(nn.Module):
         # Compute L2 norm differences per sample.
         diff = p_fft - t_fft
         # For cuda only:
-        diff_l2 = torch.norm(diff, dim=(1, 2))
-        p_l2 = torch.norm(p_fft, dim=(1, 2))
-        t_l2 = torch.norm(t_fft, dim=(1, 2))
+        # diff_l2 = torch.norm(diff, dim=(1, 2))
+        # p_l2 = torch.norm(p_fft, dim=(1, 2))
+        # t_l2 = torch.norm(t_fft, dim=(1, 2))
 
         # For MPS:
-        # diff_l2 = torch.sqrt((diff.real**2 + diff.imag**2).sum(dim=(1, 2)))
-        # p_l2 = torch.sqrt((p_fft.real**2 + p_fft.imag**2).sum(dim=(1, 2)))
-        # t_l2 = torch.sqrt((t_fft.real**2 + t_fft.imag**2).sum(dim=(1, 2)))
+        diff_l2 = torch.sqrt((diff.real**2 + diff.imag**2).sum(dim=(1, 2)))
+        p_l2 = torch.sqrt((p_fft.real**2 + p_fft.imag**2).sum(dim=(1, 2)))
+        t_l2 = torch.sqrt((t_fft.real**2 + t_fft.imag**2).sum(dim=(1, 2)))
         ssp = diff_l2 / (p_l2 + t_l2 + self.eps)
         return ssp.mean()

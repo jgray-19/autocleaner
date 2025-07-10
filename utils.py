@@ -1,9 +1,10 @@
+import scipy.signal
 import torch
 import torch.nn as nn
-from scipy.signal import find_peaks
 from generic_parser.tools import DotDict
+from scipy.signal import find_peaks
+
 from fft_processing import windowed_padded_rfft_torch
-import scipy.signal
 
 
 def smooth_fft_amps(
