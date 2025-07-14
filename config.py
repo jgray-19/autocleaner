@@ -5,9 +5,9 @@ from datetime import datetime
 from generic_parser.tools import DotDict
 
 # General Settings
-NUM_NOISY_PER_CLEAN = 10
+NUM_NOISY_PER_CLEAN = 20
 LOAD_MODEL = False
-RESUME_FROM_CKPT = True
+RESUME_FROM_CKPT = False
 NUM_EPOCHS = 1000
 
 if RESUME_FROM_CKPT:
@@ -117,7 +117,8 @@ DATA_SCALING = "meanstd"
 MISSING_PROB = 0
 
 INIT = "weiner"
-MASK_MAX_GAIN = None  # Set to a float to clamp mask, e.g. 2.0
+MASK_MAX_GAIN = 5.0  # Set to a float to clamp mask, e.g. 2.0
+LAMBDA_SPEC = 1.0  # weight of spec‐magnitude loss vs time‐MSE
 
 experiment_config = {
     "accumulate_batches": ACCUMULATE_BATCHES,
@@ -129,6 +130,7 @@ experiment_config = {
     "coupling": COUPLING,
     "data_scaling": DATA_SCALING,
     "depth": MODEL_DEPTH if MODEL_TYPE in ["unet", "fno"] else None,
+    "lambda_spec": LAMBDA_SPEC,
     "learning_rate": LEARNING_RATE,
     "load_model": LOAD_MODEL,
     "loss_type": LOSS_TYPE,

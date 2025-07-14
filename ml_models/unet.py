@@ -197,9 +197,9 @@ class UNetAutoencoderFixedDepth(nn.Module):
             nn.LeakyReLU(0.1, inplace=True),
         )
 
-    def forward(self, x):
+    def forward(self, mag_spec):
         # ----- Encoder pathway -----
-        e1 = self.enc1(x)  # shape: (B, base_channels, H, W)
+        e1 = self.enc1(mag_spec)  # shape: (B, base_channels, H, W)
         p1 = F.max_pool2d(e1, 2)  # Downsample by 2
         e2 = self.enc2(p1)  # shape: (B, base_channels*2, H/2, W/2)
         p2 = F.max_pool2d(e2, 2)
@@ -240,10 +240,8 @@ class UNetAutoencoderFixedDepth(nn.Module):
         d1 = self.dec1(d1)  # (B, base_channels, H, W)
 
         mask_log = self.final_conv(d1)  # raw logits
-        mask = torch.exp(mask_log)  # (0, ∞)
-        if MASK_MAX_GAIN is not None:
-            mask = torch.clamp(mask, max=MASK_MAX_GAIN)
-        return mask  # pl-module will do mask * x_noisy
+        mask = torch.exp(mask_log)  # allow <1 (kill noise) & >1 (boost peaks)
+        return torch.clamp(mask, max=MASK_MAX_GAIN)  # pl-module will do mask * x_noisy
 
     def _pad_to_match(self, x, ref):
         """

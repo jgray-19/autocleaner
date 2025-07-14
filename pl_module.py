@@ -8,14 +8,13 @@ import torch.optim as optim
 
 from config import (
     ALPHA,
+    LAMBDA_SPEC,
     LEARNING_RATE,
     MIN_LR,
     MODEL_TYPE,
     NUM_CONSTANT_LR_EPOCHS,
     NUM_DECAY_EPOCHS,
-    RESIDUALS,
     SCHEDULER,
-    USE_MASK,
 )
 from losses import (
     CombinedCorrelationLoss,
@@ -76,42 +75,69 @@ class LitAutoencoder(pl.LightningModule):
         return self.model(x)
 
     def get_batch_loss(self, batch):
-        # Apply mask or residual logic to get recon_x and recon_y
-        if RESIDUALS:
-            pred_x = self(batch["noisy_x"])
-            pred_y = self(batch["noisy_y"])
-
-            recon_x = batch["noisy_x"] - pred_x
-            recon_y = batch["noisy_y"] - pred_y
-        elif USE_MASK:
-            mask_x = self(batch["noisy_x"])
-            mask_y = self(batch["noisy_y"])
-
-            recon_x = mask_x * batch["noisy_x"]
-            recon_y = mask_y * batch["noisy_y"]
-        else:
-            recon_x = self(batch["noisy_x"])
-            recon_y = self(batch["noisy_y"])
-
-        # Now compute SNR-dependent blend for both x and y
         loss_total = 0.0
-        for recon, clean, noisy in zip(
-            [recon_x, recon_y],
-            [batch["clean_x"], batch["clean_y"]],
-            [batch["noisy_x"], batch["noisy_y"]],
-        ):
-            loss_mse = F.mse_loss(recon, clean)
+        recon_list = []
 
-            loss_ssp = self.ssp(recon, clean)
-            print(f"Loss MSE: {loss_mse:.4f}, Loss SSP: {loss_ssp:.4f}")
-            loss_total += ALPHA * loss_mse + (1 - ALPHA) * loss_ssp
+        for plane in ["x", "y"]:
+            x_noisy = batch[f"noisy_{plane}"]
+            x_clean = batch[f"clean_{plane}"]
+
+            # 1) STFT
+            Y_noisy = torch.stft(
+                x_noisy.squeeze(1),
+                n_fft=256,
+                hop_length=128,
+                win_length=256,
+                return_complex=True,
+            )
+            mag_noisy, phase_noisy = Y_noisy.abs().unsqueeze(1), Y_noisy.angle()
+
+            # 2) Normalize magnitude and feed to UNet
+            mag_norm = (mag_noisy - mag_noisy.mean()) / (mag_noisy.std() + 1e-6)
+            mask = self.model(mag_norm)
+            mag_hat = mask * mag_noisy  # Apply ratio mask
+
+            # 3) Reconstruct complex spectrogram and invert
+            Y_hat = mag_hat.squeeze(1) * torch.exp(1j * phase_noisy)
+            x_hat = torch.istft(
+                Y_hat,
+                n_fft=256,
+                hop_length=128,
+                win_length=256,
+                length=x_noisy.size(-1),
+            ).unsqueeze(1)
+            recon_list.append(x_hat)
+
+            # 4) Compute losses
+            loss_time = F.mse_loss(x_hat, x_clean)
+            mag_clean = (
+                torch.stft(
+                    x_clean.squeeze(1),
+                    n_fft=256,
+                    hop_length=128,
+                    win_length=256,
+                    return_complex=True,
+                )
+                .abs()
+                .unsqueeze(1)
+            )
+            loss_spec = F.mse_loss(mag_hat, mag_clean)
+            loss_total += loss_time + LAMBDA_SPEC * loss_spec
+
         loss = 0.5 * loss_total
         return loss, batch["noisy_x"].size(0) + batch["noisy_y"].size(0)
 
     def training_step(self, batch, batch_idx):
         loss, combined_batch_size = self.get_batch_loss(batch)
         current_lr = self.trainer.optimizers[0].param_groups[0]["lr"]
-        self.log("train_loss", loss, batch_size=combined_batch_size)
+        self.log(
+            "train_loss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=combined_batch_size,
+        )
         self.log("lr", current_lr, on_step=False, on_epoch=True)
         return loss
 
