@@ -147,19 +147,19 @@ class UNetAutoencoderFixedDepth(nn.Module):
         # Level 3
         self.enc3 = self.conv_block(base_channels * 2, base_channels * 4)
         # Level 4
-        self.enc4 = self.conv_block(base_channels * 4, base_channels * 8)
+        # self.enc4 = self.conv_block(base_channels * 4, base_channels * 8)
 
         # Bottleneck (fully convolutional; preserves spatial dimensions)
-        self.bottleneck = self.conv_block(base_channels * 8, base_channels * 16)
+        self.bottleneck = self.conv_block(base_channels * 4, base_channels * 8)
 
         # ----- Decoder -----
         # Level 4 decoding: upsample bottleneck to combine with encoder level 4
-        self.up4 = nn.ConvTranspose2d(
-            base_channels * 16, base_channels * 8, kernel_size=2, stride=2
-        )
-        self.dec4 = self.conv_block(
-            base_channels * 16, base_channels * 8
-        )  # concatenated channels
+        # self.up4 = nn.ConvTranspose2d(
+        #     base_channels * 16, base_channels * 8, kernel_size=2, stride=2
+        # )
+        # self.dec4 = self.conv_block(
+        #     base_channels * 16, base_channels * 8
+        # )  # concatenated channels
 
         # Level 3 decoding
         self.up3 = nn.ConvTranspose2d(
@@ -205,23 +205,23 @@ class UNetAutoencoderFixedDepth(nn.Module):
         p2 = F.max_pool2d(e2, 2)
         e3 = self.enc3(p2)  # shape: (B, base_channels*4, H/4, W/4)
         p3 = F.max_pool2d(e3, 2)
-        e4 = self.enc4(p3)  # shape: (B, base_channels*8, H/8, W/8)
-        p4 = F.max_pool2d(e4, 2)
+        # e4 = self.enc4(p3)  # shape: (B, base_channels*8, H/8, W/8)
+        # p4 = F.max_pool2d(e4, 2)
 
         # Bottleneck
-        b = self.bottleneck(p4)  # shape: (B, base_channels*16, H/16, W/16)
+        b = self.bottleneck(p3)  # shape: (B, base_channels*16, H/16, W/16)
 
         # ----- Decoder pathway with skip connections -----
-        d4 = self.up4(b)  # Upsample: (B, base_channels*8, H/8, W/8)
-        # Ensure dimensions match (pad if necessary)
-        if d4.size()[2:] != e4.size()[2:]:
-            d4 = self._pad_to_match(d4, e4)
-        d4 = torch.cat(
-            [d4, e4], dim=1
-        )  # Concatenate along channels -> (B, base_channels*16, H/8, W/8)
-        d4 = self.dec4(d4)  # (B, base_channels*8, H/8, W/8)
+        # d4 = self.up4(b)  # Upsample: (B, base_channels*8, H/8, W/8)
+        # # Ensure dimensions match (pad if necessary)
+        # if d4.size()[2:] != e4.size()[2:]:
+        #     d4 = self._pad_to_match(d4, e4)
+        # d4 = torch.cat(
+        #     [d4, e4], dim=1
+        # )  # Concatenate along channels -> (B, base_channels*16, H/8, W/8)
+        # d4 = self.dec4(d4)  # (B, base_channels*8, H/8, W/8)
 
-        d3 = self.up3(d4)  # (B, base_channels*4, H/4, W/4)
+        d3 = self.up3(b)  # (B, base_channels*4, H/4, W/4)
         if d3.size()[2:] != e3.size()[2:]:
             d3 = self._pad_to_match(d3, e3)
         d3 = torch.cat([d3, e3], dim=1)  # (B, base_channels*8, H/4, W/4)

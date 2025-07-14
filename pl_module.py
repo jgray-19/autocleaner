@@ -94,7 +94,10 @@ class LitAutoencoder(pl.LightningModule):
                 window=win,
                 return_complex=True,
             )
-            mag_noisy, phase_noisy = Y_noisy.abs().unsqueeze(1), Y_noisy.angle()
+            mag_noisy, phase_noisy = (
+                Y_noisy.abs().unsqueeze(1),
+                torch.atan2(Y_noisy.imag, Y_noisy.real),
+            )
 
             # 2) Normalize magnitude and feed to UNet
             mag_norm = (mag_noisy - mag_noisy.mean()) / (mag_noisy.std() + 1e-6)
