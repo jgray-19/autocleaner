@@ -13,8 +13,6 @@ from config import (
     MODEL_SAVE_PATH,
     MODEL_TYPE,  # to choose model architecture
     PRECISION,
-    RESIDUALS,
-    USE_MASK,
     WEIGHT_DECAY,
     save_experiment_config,
 )
@@ -90,17 +88,8 @@ def denoise_validation_sample_from_checkpoint(
 
     # 3) Forward pass (CPU)
     with torch.no_grad():
-        if RESIDUALS:
-            recon_x = noisy_batch_x - lit_model(noisy_batch_x)
-            recon_y = noisy_batch_y - lit_model(noisy_batch_y)
-        elif USE_MASK:
-            mask_x = lit_model(noisy_batch_x)
-            mask_y = lit_model(noisy_batch_y)
-            recon_x = mask_x * noisy_batch_x
-            recon_y = mask_y * noisy_batch_y
-        else:
-            recon_x = lit_model(noisy_batch_x)
-            recon_y = lit_model(noisy_batch_y)
+        recon_x, _ = lit_model.reconstruct(noisy_batch_x)
+        recon_y, _ = lit_model.reconstruct(noisy_batch_y)
 
     # Just to confirm shapes
     Bx = recon_x.size(0)

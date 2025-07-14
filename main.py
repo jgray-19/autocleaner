@@ -20,10 +20,8 @@ from config import (
     NLOGSTEPS,
     NUM_EPOCHS,
     PRECISION,
-    RESIDUALS,
     RESUME_FROM_CKPT,
     SEED,
-    USE_MASK,
     WEIGHT_DECAY,
     print_config,
     save_experiment_config,
@@ -126,17 +124,8 @@ if __name__ == "__main__":
     noisy_batch_y = batch["noisy_y"]  # shape: (B, 1, NBPMS, NTURNS)
 
     with torch.no_grad():
-        if RESIDUALS:
-            recon_x = noisy_batch_x - lit_model(noisy_batch_x)
-            recon_y = noisy_batch_y - lit_model(noisy_batch_y)
-        elif USE_MASK:
-            mask_x = lit_model(noisy_batch_x)
-            mask_y = lit_model(noisy_batch_y)
-            recon_x = mask_x * noisy_batch_x
-            recon_y = mask_y * noisy_batch_y
-        else:
-            recon_x = lit_model(noisy_batch_x)
-            recon_y = lit_model(noisy_batch_y)
+        recon_x, _ = lit_model.reconstruct(noisy_batch_x)
+        recon_y, _ = lit_model.reconstruct(noisy_batch_y)
 
     assert (
         recon_x.size(0)

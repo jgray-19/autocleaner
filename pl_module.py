@@ -74,50 +74,66 @@ class LitAutoencoder(pl.LightningModule):
     def forward(self, x):
         return self.model(x)
 
+    def reconstruct(self, x_noisy):
+        """
+        Performs spectral masking to denoise a signal.
+
+        Args:
+            x_noisy: The noisy input tensor of shape (B, C, H, W).
+
+        Returns:
+            A tuple containing:
+            - x_hat (torch.Tensor): The reconstructed (denoised) signal.
+            - mag_hat (torch.Tensor): The masked magnitude spectrogram.
+        """
+        B, C, H, W = x_noisy.shape
+        win = torch.hann_window(256, device=x_noisy.device)
+
+        # 1) STFT
+        Y_noisy = torch.stft(
+            x_noisy.view(B * H, W),
+            n_fft=256,
+            hop_length=128,
+            win_length=256,
+            window=win,
+            return_complex=True,
+        )
+        mag_noisy, phase_noisy = (
+            Y_noisy.abs().unsqueeze(1),
+            torch.atan2(Y_noisy.imag, Y_noisy.real),
+        )
+
+        # 2) Normalize magnitude and feed to UNet
+        mag_norm = (mag_noisy - mag_noisy.mean()) / (mag_noisy.std() + 1e-6)
+        mask = self.model(mag_norm)
+        mag_hat = mask * mag_noisy  # Apply ratio mask
+
+        # 3) Reconstruct complex spectrogram and invert
+        Y_hat = mag_hat.squeeze(1) * torch.exp(1j * phase_noisy)
+        x_hat = torch.istft(
+            Y_hat,
+            n_fft=256,
+            hop_length=128,
+            win_length=256,
+            window=win,
+            length=x_noisy.size(-1),
+        ).view(B, C, H, W)
+
+        return x_hat, mag_hat
+
     def get_batch_loss(self, batch):
         loss_total = 0.0
-        recon_list = []
 
         for plane in ["x", "y"]:
             x_noisy = batch[f"noisy_{plane}"]
             x_clean = batch[f"clean_{plane}"]
-            B, C, H, W = x_noisy.shape
 
-            win = torch.hann_window(256, device=x_noisy.device)
-
-            # 1) STFT
-            Y_noisy = torch.stft(
-                x_noisy.view(B * H, W),
-                n_fft=256,
-                hop_length=128,
-                win_length=256,
-                window=win,
-                return_complex=True,
-            )
-            mag_noisy, phase_noisy = (
-                Y_noisy.abs().unsqueeze(1),
-                torch.atan2(Y_noisy.imag, Y_noisy.real),
-            )
-
-            # 2) Normalize magnitude and feed to UNet
-            mag_norm = (mag_noisy - mag_noisy.mean()) / (mag_noisy.std() + 1e-6)
-            mask = self.model(mag_norm)
-            mag_hat = mask * mag_noisy  # Apply ratio mask
-
-            # 3) Reconstruct complex spectrogram and invert
-            Y_hat = mag_hat.squeeze(1) * torch.exp(1j * phase_noisy)
-            x_hat = torch.istft(
-                Y_hat,
-                n_fft=256,
-                hop_length=128,
-                win_length=256,
-                window=win,
-                length=x_noisy.size(-1),
-            ).view(B, C, H, W)
-            recon_list.append(x_hat)
+            x_hat, mag_hat = self.reconstruct(x_noisy)
 
             # 4) Compute losses
             loss_time = F.mse_loss(x_hat, x_clean)
+            B, C, H, W = x_clean.shape
+            win = torch.hann_window(256, device=x_clean.device)
             mag_clean = (
                 torch.stft(
                     x_clean.view(B * H, W),
@@ -130,7 +146,14 @@ class LitAutoencoder(pl.LightningModule):
                 .abs()
                 .unsqueeze(1)
             )
-            loss_spec = F.mse_loss(mag_hat, mag_clean)
+            # Normalize the clean magnitude with the same stats as the noisy one
+            # for a more consistent spectral loss.
+            mag_noisy_mean = mag_hat.mean()
+            mag_noisy_std = mag_hat.std()
+            mag_clean_norm = (mag_clean - mag_noisy_mean) / (mag_noisy_std + 1e-6)
+            mag_hat_norm = (mag_hat - mag_noisy_mean) / (mag_noisy_std + 1e-6)
+
+            loss_spec = F.mse_loss(mag_hat_norm, mag_clean_norm)
             loss_total += loss_time + LAMBDA_SPEC * loss_spec
 
         loss = 0.5 * loss_total
