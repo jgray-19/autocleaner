@@ -103,8 +103,7 @@ NOISE_FACTORS = [1e-4, 1e-5]
 # MODEL_TYPE = "leaky"
 MODEL_TYPE = "unet_fixed"
 MODEL_DEPTH = 4
-RESIDUALS = False  # we are NOT predicting additive residuals
-USE_MASK = True  # tell the pl-module to form  x̂ = M ⊙ x_noisy
+RESIDUALS = True
 
 LOSS_TYPE = "comb_ssp"
 # LOSS_TYPE = "mse"
@@ -116,9 +115,7 @@ NUM_DECAY_EPOCHS = 200
 DATA_SCALING = "meanstd"
 MISSING_PROB = 0
 
-INIT = "weiner"
-MASK_MAX_GAIN = 5.0  # Set to a float to clamp mask, e.g. 2.0
-LAMBDA_SPEC = 1.0  # weight of spec‐magnitude loss vs time‐MSE
+INIT = "xavier"
 
 experiment_config = {
     "accumulate_batches": ACCUMULATE_BATCHES,
@@ -130,7 +127,6 @@ experiment_config = {
     "coupling": COUPLING,
     "data_scaling": DATA_SCALING,
     "depth": MODEL_DEPTH if MODEL_TYPE in ["unet", "fno"] else None,
-    "lambda_spec": LAMBDA_SPEC,
     "learning_rate": LEARNING_RATE,
     "load_model": LOAD_MODEL,
     "loss_type": LOSS_TYPE,

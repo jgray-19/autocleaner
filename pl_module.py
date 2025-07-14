@@ -14,6 +14,7 @@ from config import (
     MODEL_TYPE,
     NUM_CONSTANT_LR_EPOCHS,
     NUM_DECAY_EPOCHS,
+    RESIDUALS,
     SCHEDULER,
 )
 from losses import (
@@ -56,7 +57,7 @@ class LitAutoencoder(pl.LightningModule):
         elif loss_type == "comb_ssp":
             self.ssp = SSPLoss()
             self.mse = torch.nn.functional.mse_loss
-            # self.loss_fn = self.combined_ssp_loss
+            self.loss_fn = self.combined_ssp_loss
         elif loss_type == "fft":
             self.loss_fn = self.combined_fft_loss
         else:
@@ -69,95 +70,37 @@ class LitAutoencoder(pl.LightningModule):
         fft_loss = fft_loss_per_bpm(pred, target)
         return ALPHA * mse_loss + (1 - ALPHA) * fft_loss
 
-    # def combined_ssp_loss(self, pred, target):
+    def combined_ssp_loss(self, pred, target):
+        ssp_loss = self.ssp(pred, target)
+        mse_loss = self.mse(pred, target)
+        return ssp_loss + 10 * mse_loss
 
     def forward(self, x):
         return self.model(x)
 
     def reconstruct(self, x_noisy):
-        """
-        Performs spectral masking to denoise a signal.
+        """Reconstruct the input from noisy data."""
 
-        Args:
-            x_noisy: The noisy input tensor of shape (B, C, H, W).
-
-        Returns:
-            A tuple containing:
-            - x_hat (torch.Tensor): The reconstructed (denoised) signal.
-            - mag_hat (torch.Tensor): The masked magnitude spectrogram.
-        """
-        B, C, H, W = x_noisy.shape
-        win = torch.hann_window(256, device=x_noisy.device)
-
-        # 1) STFT
-        Y_noisy = torch.stft(
-            x_noisy.view(B * H, W),
-            n_fft=256,
-            hop_length=128,
-            win_length=256,
-            window=win,
-            return_complex=True,
-        )
-        mag_noisy, phase_noisy = (
-            Y_noisy.abs().unsqueeze(1),
-            torch.atan2(Y_noisy.imag, Y_noisy.real),
-        )
-
-        # 2) Normalize magnitude and feed to UNet
-        mag_norm = (mag_noisy - mag_noisy.mean()) / (mag_noisy.std() + 1e-6)
-        mask = self.model(mag_norm)
-        mag_hat = mask * mag_noisy  # Apply ratio mask
-
-        # 3) Reconstruct complex spectrogram and invert
-        Y_hat = mag_hat.squeeze(1) * torch.exp(1j * phase_noisy)
-        x_hat = torch.istft(
-            Y_hat,
-            n_fft=256,
-            hop_length=128,
-            win_length=256,
-            window=win,
-            length=x_noisy.size(-1),
-        ).view(B, C, H, W)
-
-        return x_hat, mag_hat
+        # Forward pass through the model
+        recon_x = self.model(x_noisy)
+        if RESIDUALS:
+            # If using residuals, return the noisy input minus the reconstruction
+            return x_noisy - recon_x
+        else:
+            # Otherwise, just return the reconstruction
+            return recon_x
 
     def get_batch_loss(self, batch):
-        loss_total = 0.0
+        # Concatenate along batch dimension (assuming shape (B, 1, NBPMS, NTURNS))
+        combined_noisy = torch.cat([batch["noisy_x"], batch["noisy_y"]], dim=0)
+        combined_clean = torch.cat([batch["clean_x"], batch["clean_y"]], dim=0)
+        combined_batch_size = combined_noisy.size(0)
 
-        for plane in ["x", "y"]:
-            x_noisy = batch[f"noisy_{plane}"]
-            x_clean = batch[f"clean_{plane}"]
+        # Process through the model
+        combined_recon = self.reconstruct(combined_noisy)
+        loss = self.loss_fn(combined_recon, combined_clean)
 
-            x_hat, mag_hat = self.reconstruct(x_noisy)
-
-            # 4) Compute losses
-            loss_time = F.mse_loss(x_hat, x_clean)
-            B, C, H, W = x_clean.shape
-            win = torch.hann_window(256, device=x_clean.device)
-            mag_clean = (
-                torch.stft(
-                    x_clean.view(B * H, W),
-                    n_fft=256,
-                    hop_length=128,
-                    win_length=256,
-                    window=win,
-                    return_complex=True,
-                )
-                .abs()
-                .unsqueeze(1)
-            )
-            # Normalize the clean magnitude with the same stats as the noisy one
-            # for a more consistent spectral loss.
-            mag_noisy_mean = mag_hat.mean()
-            mag_noisy_std = mag_hat.std()
-            mag_clean_norm = (mag_clean - mag_noisy_mean) / (mag_noisy_std + 1e-6)
-            mag_hat_norm = (mag_hat - mag_noisy_mean) / (mag_noisy_std + 1e-6)
-
-            loss_spec = F.mse_loss(mag_hat_norm, mag_clean_norm)
-            loss_total += loss_time + LAMBDA_SPEC * loss_spec
-
-        loss = 0.5 * loss_total
-        return loss, batch["noisy_x"].size(0) + batch["noisy_y"].size(0)
+        return loss, combined_batch_size
 
     def training_step(self, batch, batch_idx):
         loss, combined_batch_size = self.get_batch_loss(batch)

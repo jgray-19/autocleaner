@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import torch.nn.init as init
 from torch.utils.checkpoint import checkpoint
 
-from config import BASE_CHANNELS, INIT, MASK_MAX_GAIN, MODEL_DEPTH, NUM_CHANNELS
+from config import BASE_CHANNELS, MODEL_DEPTH, NUM_CHANNELS
 
 
 # -------------------------------------------------------------------
@@ -147,19 +147,19 @@ class UNetAutoencoderFixedDepth(nn.Module):
         # Level 3
         self.enc3 = self.conv_block(base_channels * 2, base_channels * 4)
         # Level 4
-        # self.enc4 = self.conv_block(base_channels * 4, base_channels * 8)
+        self.enc4 = self.conv_block(base_channels * 4, base_channels * 8)
 
         # Bottleneck (fully convolutional; preserves spatial dimensions)
-        self.bottleneck = self.conv_block(base_channels * 4, base_channels * 8)
+        self.bottleneck = self.conv_block(base_channels * 8, base_channels * 16)
 
         # ----- Decoder -----
         # Level 4 decoding: upsample bottleneck to combine with encoder level 4
-        # self.up4 = nn.ConvTranspose2d(
-        #     base_channels * 16, base_channels * 8, kernel_size=2, stride=2
-        # )
-        # self.dec4 = self.conv_block(
-        #     base_channels * 16, base_channels * 8
-        # )  # concatenated channels
+        self.up4 = nn.ConvTranspose2d(
+            base_channels * 16, base_channels * 8, kernel_size=2, stride=2
+        )
+        self.dec4 = self.conv_block(
+            base_channels * 16, base_channels * 8
+        )  # concatenated channels
 
         # Level 3 decoding
         self.up3 = nn.ConvTranspose2d(
@@ -179,12 +179,13 @@ class UNetAutoencoderFixedDepth(nn.Module):
         )
         self.dec1 = self.conv_block(base_channels * 2, base_channels)
 
+        # Final output convolution to get back to in_channels
         self.final_conv = nn.Conv2d(base_channels, in_channels, kernel_size=1)
         self._initialize_weights()
-        # (optionally) start near identity  → exp(0)=1
-        if INIT == "weiner":
-            torch.nn.init.zeros_(self.final_conv.weight)
-            torch.nn.init.zeros_(self.final_conv.bias)
+        # residual head starts at zero ⇒ R ≡ 0
+        nn.init.zeros_(self.final_conv.weight)
+        if self.final_conv.bias is not None:
+            nn.init.zeros_(self.final_conv.bias)
 
     def conv_block(self, in_ch, out_ch):
         """A double convolution block with BatchNorm and LeakyReLU activations."""
@@ -197,51 +198,50 @@ class UNetAutoencoderFixedDepth(nn.Module):
             nn.LeakyReLU(0.1, inplace=True),
         )
 
-    def forward(self, mag_spec):
+    def forward(self, x):
         # ----- Encoder pathway -----
-        e1 = self.enc1(mag_spec)  # shape: (B, base_channels, H, W)
+        e1 = self.enc1(x)  # shape: (B, 16, H, W)
         p1 = F.max_pool2d(e1, 2)  # Downsample by 2
-        e2 = self.enc2(p1)  # shape: (B, base_channels*2, H/2, W/2)
+        e2 = self.enc2(p1)  # shape: (B, 32, H/2, W/2)
         p2 = F.max_pool2d(e2, 2)
-        e3 = self.enc3(p2)  # shape: (B, base_channels*4, H/4, W/4)
+        e3 = self.enc3(p2)  # shape: (B, 64, H/4, W/4)
         p3 = F.max_pool2d(e3, 2)
-        # e4 = self.enc4(p3)  # shape: (B, base_channels*8, H/8, W/8)
-        # p4 = F.max_pool2d(e4, 2)
+        e4 = self.enc4(p3)  # shape: (B, 128, H/8, W/8)
+        p4 = F.max_pool2d(e4, 2)
 
         # Bottleneck
-        b = self.bottleneck(p3)  # shape: (B, base_channels*16, H/16, W/16)
+        b = self.bottleneck(p4)  # shape: (B, 256, H/16, W/16)
 
         # ----- Decoder pathway with skip connections -----
-        # d4 = self.up4(b)  # Upsample: (B, base_channels*8, H/8, W/8)
-        # # Ensure dimensions match (pad if necessary)
-        # if d4.size()[2:] != e4.size()[2:]:
-        #     d4 = self._pad_to_match(d4, e4)
-        # d4 = torch.cat(
-        #     [d4, e4], dim=1
-        # )  # Concatenate along channels -> (B, base_channels*16, H/8, W/8)
-        # d4 = self.dec4(d4)  # (B, base_channels*8, H/8, W/8)
+        d4 = self.up4(b)  # Upsample: (B, 128, H/8, W/8)
+        # Ensure dimensions match (pad if necessary)
+        if d4.size()[2:] != e4.size()[2:]:
+            d4 = self._pad_to_match(d4, e4)
+        d4 = torch.cat(
+            [d4, e4], dim=1
+        )  # Concatenate along channels -> (B, 256, H/8, W/8)
+        d4 = self.dec4(d4)  # (B, 128, H/8, W/8)
 
-        d3 = self.up3(b)  # (B, base_channels*4, H/4, W/4)
+        d3 = self.up3(d4)  # (B, 64, H/4, W/4)
         if d3.size()[2:] != e3.size()[2:]:
             d3 = self._pad_to_match(d3, e3)
-        d3 = torch.cat([d3, e3], dim=1)  # (B, base_channels*8, H/4, W/4)
-        d3 = self.dec3(d3)  # (B, base_channels*4, H/4, W/4)
+        d3 = torch.cat([d3, e3], dim=1)  # (B, 128, H/4, W/4)
+        d3 = self.dec3(d3)  # (B, 64, H/4, W/4)
 
-        d2 = self.up2(d3)  # (B, base_channels*2, H/2, W/2)
+        d2 = self.up2(d3)  # (B, 32, H/2, W/2)
         if d2.size()[2:] != e2.size()[2:]:
             d2 = self._pad_to_match(d2, e2)
-        d2 = torch.cat([d2, e2], dim=1)  # (B, base_channels*4, H/2, W/2)
-        d2 = self.dec2(d2)  # (B, base_channels*2, H/2, W/2)
+        d2 = torch.cat([d2, e2], dim=1)  # (B, 64, H/2, W/2)
+        d2 = self.dec2(d2)  # (B, 32, H/2, W/2)
 
-        d1 = self.up1(d2)  # (B, base_channels, H, W)
+        d1 = self.up1(d2)  # (B, 16, H, W)
         if d1.size()[2:] != e1.size()[2:]:
             d1 = self._pad_to_match(d1, e1)
-        d1 = torch.cat([d1, e1], dim=1)  # (B, base_channels*2, H, W)
-        d1 = self.dec1(d1)  # (B, base_channels, H, W)
+        d1 = torch.cat([d1, e1], dim=1)  # (B, 16, H, W)
+        d1 = self.dec1(d1)  # (B, 16, H, W)
 
-        mask_log = self.final_conv(d1)  # raw logits
-        mask = torch.exp(mask_log)  # allow <1 (kill noise) & >1 (boost peaks)
-        return torch.clamp(mask, max=MASK_MAX_GAIN)  # pl-module will do mask * x_noisy
+        out = self.final_conv(d1)  # (B, in_channels, H, W)
+        return out
 
     def _pad_to_match(self, x, ref):
         """
@@ -501,22 +501,27 @@ class ModifiedUNetFixed(nn.Module):
         )  # from 32 to 16
 
         self.outc = nn.Conv2d(base_channels, out_channels, kernel_size=1)
-        if INIT == "weiner":
-            nn.init.zeros_(self.final_conv.weight)
-            nn.init.zeros_(self.final_conv.bias)
+        self.out_activation = nn.Tanh()  # Bound outputs to [-1,1]
 
     def forward(self, x):
-        x1 = self.inc(x)
-        x2_skip, x2 = self.down1(x1)
-        x3_skip, x3 = self.down2(x2)
-        x4_skip, x4 = self.down3(x3)
-        x5_skip, x5 = self.down4(x4)
-        x_bottleneck = self.bottleneck(x5)
-        x = self.up1(x_bottleneck, x5_skip)
-        x = self.up2(x, x4_skip)
-        x = self.up3(x, x3_skip)
-        x = self.up4(x, x2_skip)
+        x1 = self.inc(x)  # shape: (B, 16, H, W)
+        x2_skip, x2 = self.down1(
+            x1
+        )  # x2_skip: (B, 32, H/?, W/?), x2: (B, 32, H/2, W/2)
+        x3_skip, x3 = self.down2(
+            x2
+        )  # x3_skip: (B, 64, H/2, W/2), x3: (B, 64, H/4, W/4)
+        x4_skip, x4 = self.down3(
+            x3
+        )  # x4_skip: (B, 128, H/4, W/4), x4: (B, 128, H/8, W/8)
+        x5_skip, x5 = self.down4(
+            x4
+        )  # x5_skip: (B, 256, H/8, W/8), x5: (B, 256, H/16, W/16)
+
+        x_bottleneck = self.bottleneck(x5)  # (B, 256, H/16, W/16)
+        x = self.up1(x_bottleneck, x5_skip)  # Upsample to H/8, channels become 128
+        x = self.up2(x, x4_skip)  # Upsample to H/4, channels become 64
+        x = self.up3(x, x3_skip)  # Upsample to H/2, channels become 32
+        x = self.up4(x, x2_skip)  # Upsample to H, channels become 16
         x = self.outc(x)
-        mask = torch.exp(x)
-        mask = torch.clamp(mask, max=MASK_MAX_GAIN)
-        return mask
+        return self.out_activation(x)
