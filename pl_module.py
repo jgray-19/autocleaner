@@ -81,13 +81,17 @@ class LitAutoencoder(pl.LightningModule):
         for plane in ["x", "y"]:
             x_noisy = batch[f"noisy_{plane}"]
             x_clean = batch[f"clean_{plane}"]
+            B, C, H, W = x_noisy.shape
+
+            win = torch.hann_window(256, device=x_noisy.device)
 
             # 1) STFT
             Y_noisy = torch.stft(
-                x_noisy.squeeze(1),
+                x_noisy.view(B * H, W),
                 n_fft=256,
                 hop_length=128,
                 win_length=256,
+                window=win,
                 return_complex=True,
             )
             mag_noisy, phase_noisy = Y_noisy.abs().unsqueeze(1), Y_noisy.angle()
@@ -104,18 +108,20 @@ class LitAutoencoder(pl.LightningModule):
                 n_fft=256,
                 hop_length=128,
                 win_length=256,
+                window=win,
                 length=x_noisy.size(-1),
-            ).unsqueeze(1)
+            ).view(B, C, H, W)
             recon_list.append(x_hat)
 
             # 4) Compute losses
             loss_time = F.mse_loss(x_hat, x_clean)
             mag_clean = (
                 torch.stft(
-                    x_clean.squeeze(1),
+                    x_clean.view(B * H, W),
                     n_fft=256,
                     hop_length=128,
                     win_length=256,
+                    window=win,
                     return_complex=True,
                 )
                 .abs()
