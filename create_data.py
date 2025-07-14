@@ -54,13 +54,13 @@ tune_list = [
     [0.69, 0.68],
 ]
 coupling = [
-    False,
-    # 1e-4,
-    # 1e-3,
+    # False,
+    1e-4,
+    1e-3,
     # 3e-3,
 ]
 
-kick_amps = [1e-4]
+kick_amps = [1e-2, 1e-3]
 
 
 def delete_unwanted_files(beam, nturns, coupling_knob, tunes, kick_amp):
@@ -93,12 +93,12 @@ def delete_unwanted_files(beam, nturns, coupling_knob, tunes, kick_amp):
         acc_models_link.unlink()
 
     # Delete the saved sequence files using Path.unlink()
-    madx_seq = model_dir / f"lhcb{beam}_saved.seq"
-    mad_seq = model_dir / f"lhcb{beam}_saved.mad"
-    if madx_seq.exists():
-        madx_seq.unlink()
-    if mad_seq.exists():
-        mad_seq.unlink()
+    # madx_seq = model_dir / f"lhcb{beam}_saved.seq"
+    # mad_seq = model_dir / f"lhcb{beam}_saved.mad"
+    # if madx_seq.exists():
+    #     madx_seq.unlink()
+    # if mad_seq.exists():
+    #     mad_seq.unlink()
 
     # Delete the macros folder (unchanged as it's already using shutil)
     macros_dir = model_dir / "macros"
@@ -110,8 +110,11 @@ def process_configuration(args):
     beam, tunes, cknob, kick = args
     model_dir = get_model_dir(beam, cknob, tunes)
     log.info(f"Model directory: {model_dir}")
-    create_model_dir(beam, nat_tunes=tunes, coupling_knob=cknob)
-    log.info(f"Model directory created: {model_dir}")
+    if not (model_dir / f"lhcb{beam}_saved.seq").exists():
+        create_model_dir(beam, nat_tunes=tunes, coupling_knob=cknob)
+        log.info(f"Model directory created: {model_dir}")
+    else:
+        log.info(f"Model directory already exists: {model_dir}")
 
     tfs_path = get_tfs_path(
         beam, nturns, coupling_knob=cknob, tunes=tunes, kick_amp=kick

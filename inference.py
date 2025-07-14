@@ -14,6 +14,7 @@ from config import (
     MODEL_TYPE,  # to choose model architecture
     PRECISION,
     RESIDUALS,
+    USE_MASK,
     WEIGHT_DECAY,
     save_experiment_config,
 )
@@ -21,7 +22,7 @@ from dataloader import (
     BPMSDataset,
     denormalise_sample_dict,
     load_data,
-    save_global_norm_params,
+    # save_global_norm_params,
 )
 from pl_module import LitAutoencoder, find_newest_file, get_model
 from visualisation import plot_denoised_data
@@ -31,7 +32,6 @@ def denoise_validation_sample_from_checkpoint(
     checkpoint_name: str,
     val_loader,
     dataset: BPMSDataset,
-    residuals: bool = RESIDUALS,
     device_index: int = 111,
     do_plot: bool = True,
 ):
@@ -44,7 +44,6 @@ def denoise_validation_sample_from_checkpoint(
         val_loader (DataLoader): A validation DataLoader with the same structure used in training.
         dataset (BPMSDataset): The dataset object, for inverting normalization (via build_sample_dict).
         model_type (str): String specifying the model architecture (e.g., 'unet_fixed_checkpoint').
-        residuals (bool): True if the model output is a residual to subtract from noisy signal.
         device_index (int): BPM index for FFT plots.
         do_plot (bool): If True, will plot the denoised data.
 
@@ -57,7 +56,12 @@ def denoise_validation_sample_from_checkpoint(
         f"Building '{MODEL_TYPE}' model and loading checkpoint on CPU from: {checkpoint_name}"
     )
     # 1) Build the model and load checkpoint weights on CPU
-    checkpoint_path = Path("tensor-logs/") / checkpoint_name / "checkpoints"
+    # If on mac, use other checkpoint path
+    if torch.backends.mps.is_available():
+        checkpoint_path = Path("tensor-logs/") / checkpoint_name / "checkpoints"
+    else:
+        root_dir = Path("/home/jovyan/")
+        checkpoint_path = root_dir / "tensor-logs/" / checkpoint_name / "checkpoints"
     checkpoint_file = find_newest_file(checkpoint_path)
     lit_model = LitAutoencoder.load_from_checkpoint(
         checkpoint_path=checkpoint_file,
@@ -86,9 +90,14 @@ def denoise_validation_sample_from_checkpoint(
 
     # 3) Forward pass (CPU)
     with torch.no_grad():
-        if residuals:
+        if RESIDUALS:
             recon_x = noisy_batch_x - lit_model(noisy_batch_x)
             recon_y = noisy_batch_y - lit_model(noisy_batch_y)
+        elif USE_MASK:
+            mask_x = lit_model(noisy_batch_x)
+            mask_y = lit_model(noisy_batch_y)
+            recon_x = mask_x * noisy_batch_x
+            recon_y = mask_y * noisy_batch_y
         else:
             recon_x = lit_model(noisy_batch_x)
             recon_y = lit_model(noisy_batch_y)
@@ -101,15 +110,12 @@ def denoise_validation_sample_from_checkpoint(
     assert Bx == Nx, "Recon and input batch size mismatch for X"
     assert By == Ny, "Recon and input batch size mismatch for Y"
 
-    # 4) Build a sample_dict for the first item in the batch
     norm_info = {
-        "mean_x": dataset.global_mean_x,
-        "std_x": dataset.global_std_x,
-        "mean_y": dataset.global_mean_y,
-        "std_y": dataset.global_std_y,
+        "mean_x": batch["mean_x"][0].numpy(),
+        "std_x": batch["std_x"][0].numpy(),
+        "mean_y": batch["mean_y"][0].numpy(),
+        "std_y": batch["std_y"][0].numpy(),
     }
-    # Save global normalization parameters
-    save_global_norm_params(dataset, filepath="global_norm_params.json")
 
     # If theres a problem, first check this!
     sample = {
@@ -155,7 +161,4 @@ if __name__ == "__main__":
         # checkpoint_name="2025-03-27_16-54-52",
         val_loader=val_loader,
         dataset=dataset,
-        residuals=False,
-        device_index=111,
-        do_plot=True,
     )

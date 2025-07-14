@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from config import ALPHA
+from config import ALPHA, NBPMS, NTURNS
 
 
 class CorrelationLoss(nn.Module):
@@ -149,51 +149,59 @@ class SSPLoss(nn.Module):
       3) Normalize by the sum of the individual spectral L2 norms.
       4) Average across the batch.
 
-    If your data are strictly real and have shape (B, C, H, W), rFFT2 suffices. If you need a full
-    complex FFT, you can switch to fft2 or handle multi-dimensional signals (e.g., 1D, 3D) similarly.
+    Now also
+    1. Pre-computes the padded FFT sizes in __init__ (so the bit_length logic
+       runs only once).
+    2. Uses torch.fft.rfftn + torch.linalg.norm on the complex tensor directly
+       (all in optimized C/CUDA kernels) instead of hand-rolling real/imag ops.
+    3. Flattens all non-batch dims before the norm reduction to keep it a single
+       contiguous reduction per sample.
     """
 
     def __init__(self, eps: float = 1e-8):
         """
         Args:
-            eps (float): Small epsilon to avoid division by zero.
+            H, W:  the height and width of your input patches (must be constant
+                   across calls).
+            eps:   small constant to avoid div by zero.
         """
         super().__init__()
         self.eps = eps
+        # next power-of-two
+        self.new_H = 1 << (NBPMS - 1).bit_length()
+        self.new_W = 1 << (NTURNS - 1).bit_length()
 
     def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            pred:   Tensor of shape (B, 1, H, W), real-valued signals.
-            target: Tensor of shape (B, 1, H, W), real-valued signals.
-
+          pred, target: (B, C, H, W), real-valued.
         Returns:
-            A scalar tensor representing the average SSP loss over the batch.
+          scalar SSP loss.
         """
-        p = pred.squeeze(1)  # shape: (B, H, W)
-        t = target.squeeze(1)
+        # compute batched rFFT in one shot over last two dims
+        p_fft = torch.fft.rfftn(
+            pred, s=(self.new_H, self.new_W), dim=(-2, -1), norm="ortho"
+        )
+        t_fft = torch.fft.rfftn(
+            target, s=(self.new_H, self.new_W), dim=(-2, -1), norm="ortho"
+        )
 
-        # Compute next power-of-two sizes for H and W
-        def next_power_of_two(x: int) -> int:
-            return 1 << (x - 1).bit_length()
-
-        new_H = next_power_of_two(p.size(1))
-        new_W = next_power_of_two(p.size(2))
-
-        # Compute 2D FFTs with automatic zero-padding to power-of-two dimensions.
-        p_fft = torch.fft.rfft2(p, s=(new_H, new_W), norm="ortho")
-        t_fft = torch.fft.rfft2(t, s=(new_H, new_W), norm="ortho")
-
-        # Compute L2 norm differences per sample.
+        # pointwise difference
         diff = p_fft - t_fft
-        # For cuda only:
-        # diff_l2 = torch.norm(diff, dim=(1, 2))
-        # p_l2 = torch.norm(p_fft, dim=(1, 2))
-        # t_l2 = torch.norm(t_fft, dim=(1, 2))
 
-        # For MPS:
-        diff_l2 = torch.sqrt((diff.real**2 + diff.imag**2).sum(dim=(1, 2)))
-        p_l2 = torch.sqrt((p_fft.real**2 + p_fft.imag**2).sum(dim=(1, 2)))
-        t_l2 = torch.sqrt((t_fft.real**2 + t_fft.imag**2).sum(dim=(1, 2)))
+        # flatten spatial+channel dims → (B, N), N = C * new_H * (new_W//2+1)
+        diff = diff.flatten(1)
+        p_vec = p_fft.flatten(1)
+        t_vec = t_fft.flatten(1)
+
+        # diff_l2 = torch.linalg.norm(diff, dim=1)
+        # p_l2 = torch.linalg.norm(p_vec, dim=1)
+        # t_l2 = torch.linalg.norm(t_vec, dim=1)
+
+        # Frobenius norm over each row (complex-aware, manual for MPS/compat)
+        diff_l2 = torch.sqrt((diff.real**2 + diff.imag**2).sum(dim=1))
+        p_l2 = torch.sqrt((p_vec.real**2 + p_vec.imag**2).sum(dim=1))
+        t_l2 = torch.sqrt((t_vec.real**2 + t_vec.imag**2).sum(dim=1))
+
         ssp = diff_l2 / (p_l2 + t_l2 + self.eps)
         return ssp.mean()

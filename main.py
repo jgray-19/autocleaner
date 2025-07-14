@@ -19,9 +19,11 @@ from config import (
     MODEL_SAVE_PATH,
     NLOGSTEPS,
     NUM_EPOCHS,
+    PRECISION,
     RESIDUALS,
     RESUME_FROM_CKPT,
     SEED,
+    USE_MASK,
     WEIGHT_DECAY,
     print_config,
     save_experiment_config,
@@ -29,7 +31,6 @@ from config import (
 from dataloader import denormalise_sample_dict, load_data, save_global_norm_params
 from pl_module import (
     LitAutoencoder,
-    # NoiseAnnealingCallback,
     find_newest_file,
     get_model,
 )
@@ -78,21 +79,23 @@ if __name__ == "__main__":
             weight_decay=WEIGHT_DECAY,
         )
 
-        root_dir = Path("/Users/joshuagray/Documents/autocleaner")
+        if torch.backends.mps.is_available():
+            root_dir = Path("/Users/joshuagray/Documents/autocleaner")
+        else:
+            root_dir = Path("/home/jovyan/")
         log_dir = root_dir / "tensor-logs/"
         logger = TensorBoardLogger(root_dir, name=log_dir.name, version=CONFIG_NAME)
-        if not RESUME_FROM_CKPT:
-            save_experiment_config(log_dir)
+        save_experiment_config(log_dir)
 
         # torch.cuda.empty_cache()
         b4_train = time.time()
-        # noise_annealing_callback = NoiseAnnealingCallback()
         trainer = pl.Trainer(
             accumulate_grad_batches=ACCUMULATE_BATCHES,
             max_epochs=NUM_EPOCHS,
             log_every_n_steps=NLOGSTEPS,
             default_root_dir=root_dir,  # Set the logging path
             logger=logger,
+            precision=PRECISION,
             # callbacks=[noise_annealing_callback],
             # max_time={"hours": 7.5},
             # enable_checkpointing=False,  # Disables automatic checkpoint saving
@@ -124,11 +127,16 @@ if __name__ == "__main__":
 
     with torch.no_grad():
         if RESIDUALS:
-            recon_x = noisy_batch_x - model(noisy_batch_x)
-            recon_y = noisy_batch_y - model(noisy_batch_y)
+            recon_x = noisy_batch_x - lit_model(noisy_batch_x)
+            recon_y = noisy_batch_y - lit_model(noisy_batch_y)
+        elif USE_MASK:
+            mask_x = lit_model(noisy_batch_x)
+            mask_y = lit_model(noisy_batch_y)
+            recon_x = mask_x * noisy_batch_x
+            recon_y = mask_y * noisy_batch_y
         else:
-            recon_x = model(noisy_batch_x)
-            recon_y = model(noisy_batch_y)
+            recon_x = lit_model(noisy_batch_x)
+            recon_y = lit_model(noisy_batch_y)
 
     assert (
         recon_x.size(0)
@@ -136,14 +144,6 @@ if __name__ == "__main__":
         == noisy_batch_y.size(0)
         == recon_y.size(0)
     )
-
-    norm_info = {
-        "mean_x": dataset.global_mean_x,
-        "std_x": dataset.global_std_x,
-        "mean_y": dataset.global_mean_y,
-        "std_y": dataset.global_std_y,
-    }
-
     sample = {
         "noisy_x": noisy_batch_x[0, 0, ...].numpy(),
         "noisy_y": noisy_batch_y[0, 0, ...].numpy(),
@@ -151,7 +151,7 @@ if __name__ == "__main__":
         "recon_y": recon_y[0, 0, ...].numpy(),
         "clean_x": batch["clean_x"][0, 0, ...].numpy(),
         "clean_y": batch["clean_y"][0, 0, ...].numpy(),
-        "norm_info": norm_info,
+        "norm_info": batch["norm_info"][0],  # Use the norm_info from the batch
     }
 
     sample_dict = denormalise_sample_dict(sample, dataset)

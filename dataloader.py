@@ -24,6 +24,12 @@ from config import (
     TRAIN_RATIO,
 )
 
+# Enable PyTorch optimizations
+torch.backends.cudnn.benchmark = True  # Optimize for consistent input sizes
+torch.backends.cudnn.deterministic = (
+    False  # Allow non-deterministic algorithms for speed
+)
+
 
 def load_clean_data(sdds_data_path, model_dir) -> tuple[torch.Tensor, torch.Tensor]:
     sdds_data = read_tbt(sdds_data_path)
@@ -34,7 +40,7 @@ def load_clean_data(sdds_data_path, model_dir) -> tuple[torch.Tensor, torch.Tens
     # sqrt_betax = np.sqrt(model_dat["BETX"].values)
     # sqrt_betay = np.sqrt(model_dat["BETY"].values)
     # For now, let's not normalise the data.
-    sqrt_betax = sqrt_betay = np.ones(NBPMS)
+    sqrt_betax = sqrt_betay = np.ones(NBPMS, dtype=np.float32)
 
     x_data = sdds_data.matrices[0].X.to_numpy()
     y_data = sdds_data.matrices[0].Y.to_numpy()
@@ -46,9 +52,11 @@ def load_clean_data(sdds_data_path, model_dir) -> tuple[torch.Tensor, torch.Tens
         f"Missing some BPMs, y data has shape: {y_data.shape}"
     )
 
+    # Since we're dividing by ones, skip the division for performance
+    # More efficient tensor creation from numpy arrays
     return (
-        torch.tensor(x_data / sqrt_betax[:, None], dtype=torch.float32),
-        torch.tensor(y_data / sqrt_betay[:, None], dtype=torch.float32),
+        torch.from_numpy(x_data.astype(np.float32)),
+        torch.from_numpy(y_data.astype(np.float32)),
         sqrt_betax,
         sqrt_betay,
     )
@@ -95,23 +103,26 @@ def cyclic_slice_bpm_turns(raw_tensor: torch.Tensor) -> torch.Tensor:
     permutation of the data to create a window of NTURNS turns, starting from turn 0.
     The output tensor will have shape (NBPMS, NTURNS).
     """
-    # Flatten in column-major order.
-    # Transpose so that rows are turns: shape (TOTAL_TURNS, NBPMS).
-    transposed = raw_tensor.t()
-    # Flattening now produces a vector where each turn's BPMs are contiguous.
-    flat = transposed.reshape(-1)
+    flat_o = torch.randint(0, (TOTAL_TURNS - NTURNS) * NBPMS, (), dtype=torch.long)
+    turn_o = flat_o // NBPMS
+    bpm_o = flat_o % NBPMS
+    # roll 2 dims in one go, then slice the first NTURNS columns
+    rolled = torch.roll(raw_tensor, shifts=(bpm_o, -turn_o), dims=(0, 1))
+    return rolled[:, :NTURNS]
 
-    # Step 3: Choose one random offset (covering both BPM and turn offsets) and roll.
-    offset = np.random.randint(0, (TOTAL_TURNS - NTURNS) * NBPMS - 1)
-    flat_shifted = torch.roll(flat, shifts=-offset)
 
-    # Step 4: Reshape back and transpose so that the output is (NBPMS, window_length).
-    # The flat vector is reshaped into (window_length, NBPMS) then transposed.
-    shifted = flat_shifted.reshape(TOTAL_TURNS, -1).t()
+def random_slice_turns(raw_tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Given a tensor of shape (NBPMS, TOTAL_TURNS), this function selects a random
+    contiguous slice of NTURNS turns from the data.
+    The output tensor will have shape (NBPMS, NTURNS).
+    """
+    # Select a random starting turn index using config constants
+    max_start_turn = TOTAL_TURNS - NTURNS
+    start_turn = torch.randint(0, max_start_turn + 1, (), dtype=torch.long).item()
 
-    # We only want the first NTURNS turns.
-    shifted = shifted[:, :NTURNS]
-    return shifted
+    # Return the slice of NTURNS turns starting from the random position
+    return raw_tensor[:, start_turn : start_turn + NTURNS]
 
 
 class BPMSDataset(Dataset):
@@ -130,20 +141,17 @@ class BPMSDataset(Dataset):
         super().__init__()
         self.clean_param_list = clean_param_list
         self.num_files_per_clean = num_variations_per_clean
-        self.noise_factors = noise_factors
+        noise_factors = np.array(noise_factors, dtype=np.float32)
 
         # Load all clean files once into big lists so we never do it in __getitem__
         all_clean_x = []
         all_clean_y = []
-        self.global_mean_x = 0.0
-        self.global_std_x = 1.0
-        self.global_mean_y = 0.0
-        self.global_std_y = 1.0
+        mean_x_list = []
+        std_x_list = []
+        mean_y_list = []
+        std_y_list = []
 
         # First pass: collect all data to compute global statistics
-        all_data_x = []
-        all_data_y = []
-
         for params in self.clean_param_list:
             sdds_data_path = get_tbt_path(
                 params["beam"],
@@ -162,44 +170,34 @@ class BPMSDataset(Dataset):
             # Each is shape (NBPMS, TOTAL_TURNS)
             all_clean_x.append(clean_x)
             all_clean_y.append(clean_y)
-            all_data_x.append(clean_x)
-            all_data_y.append(clean_y)
+            # Compute mean and std for each file over the NTURNS (so we have a single value per BPM)
+            mean_x_list.append(clean_x.mean())
+            std_x_list.append(clean_x.std())
+            mean_y_list.append(clean_y.mean())
+            std_y_list.append(clean_y.std())
 
-        # Compute global mean and std across all data
-        all_x_data = torch.cat(all_data_x, dim=1)  # Concatenate along turns dimension
-        all_y_data = torch.cat(all_data_y, dim=1)  # Concatenate along turns dimension
-
-        self.global_mean_x = all_x_data.mean()
-        self.global_std_x = all_x_data.std()
-        self.global_mean_y = all_y_data.mean()
-        self.global_std_y = all_y_data.std()
-
-        # Ensure std is not zero to avoid division by zero
-        if self.global_std_x == 0:
-            self.global_std_x = 1.0
-        if self.global_std_y == 0:
-            self.global_std_y = 1.0
-
-        # Now store each file's raw data (still in memory) so we can quickly sample from it
-        # We'll keep them separate from the big concatenated arrays for clarity.
-        self.cached_clean_x = all_clean_x  # list of Tensors
-        self.cached_clean_y = all_clean_y  # list of Tensors
+        # Convert lists to tensors for faster indexing
+        self.cached_clean_x = all_clean_x  # Keep as list for memory efficiency
+        self.cached_clean_y = all_clean_y  # Keep as list for memory efficiency
+        self.mean_x = mean_x_list  # shape: (num_files, NBPMS)
+        self.std_x = std_x_list  # shape: (num_files, NBPMS)
+        self.mean_y = mean_y_list  # shape: (num_files, NBPMS)
+        self.std_y = std_y_list  # shape: (num_files, NBPMS)
 
         # Next, define how many total samples we want
         self.num_clean = len(self.clean_param_list)
         self.total_files = self.num_clean * num_variations_per_clean
 
-        # Precompute random indices, offsets, noise
-        self.clean_indices = np.random.randint(0, self.num_clean, size=self.total_files)
-        self.noise_factors = np.random.choice(
-            noise_factors, size=self.total_files, replace=True
+        # Precompute random indices, offsets, noise - convert to tensors for speed
+        self.clean_indices = torch.from_numpy(
+            np.random.randint(0, self.num_clean, size=self.total_files, dtype=np.int64)
         )
-
-        # Initialize noise multiplier for dynamic noise scaling
-        self.current_noise_multiplier = 1.0
-
-    def update_noise_multiplier(self, multiplier):
-        self.current_noise_multiplier = multiplier
+        self.noise_factors = torch.from_numpy(
+            np.random.choice(noise_factors, size=self.total_files, replace=True)
+        )
+        # Pre-generate missing data masks to avoid repeated random number generation
+        self.missing_masks_x = torch.rand(self.total_files, NBPMS) < MISSING_PROB
+        self.missing_masks_y = torch.rand(self.total_files, NBPMS) < MISSING_PROB
 
     def __len__(self):
         return self.total_files
@@ -207,15 +205,15 @@ class BPMSDataset(Dataset):
     def __getitem__(self, idx):
         # Identify which file we want
         file_idx = self.clean_indices[idx]
-        noise_factor = self.noise_factors[idx] * self.current_noise_multiplier
+        noise_factor = self.noise_factors[idx]
 
         # Pull out the raw (un-normalized) data from memory
         raw_x = self.cached_clean_x[file_idx]  # shape (NBPMS, TOTAL_TURNS)
         raw_y = self.cached_clean_y[file_idx]
 
-        # Extract a window of NTURNS starting at turn 0 and apply BPM cyclic permutation.
-        window_x = cyclic_slice_bpm_turns(raw_x)
-        window_y = cyclic_slice_bpm_turns(raw_y)
+        # Extract a random window of NTURNS turns
+        window_x = random_slice_turns(raw_x)
+        window_y = random_slice_turns(raw_y)
 
         # Add noise in raw domain (before normalization for physical consistency)
         noise_x = torch.randn_like(window_x) * noise_factor
@@ -223,15 +221,22 @@ class BPMSDataset(Dataset):
         noisy_window_x = window_x + noise_x
         noisy_window_y = window_y + noise_y
 
-        # Normalize using global mean/std (z-score normalization).
-        norm_slice_x = (window_x - self.global_mean_x) / self.global_std_x
-        norm_slice_y = (window_y - self.global_mean_y) / self.global_std_y
-        noisy_slice_x = (noisy_window_x - self.global_mean_x) / self.global_std_x
-        noisy_slice_y = (noisy_window_y - self.global_mean_y) / self.global_std_y
+        # Use tensor indexing for faster access
+        mean_x = self.mean_x[file_idx]  # shape: (1,)
+        std_x = self.std_x[file_idx]  # shape: (1,)
+        mean_y = self.mean_y[file_idx]  # shape: (1,)
+        std_y = self.std_y[file_idx]  # shape: (1,)
 
-        # Missing BPM simulation
-        noisy_slice_x[torch.rand(NBPMS) < MISSING_PROB, :] = 0
-        noisy_slice_y[torch.rand(NBPMS) < MISSING_PROB, :] = 0
+        norm_slice_x = (window_x - mean_x) / std_x
+        norm_slice_y = (window_y - mean_y) / std_y
+        noisy_slice_x = (noisy_window_x - mean_x) / std_x
+        noisy_slice_y = (noisy_window_y - mean_y) / std_y
+
+        # Use pre-computed masks for missing data
+        missing_mask_x = self.missing_masks_x[idx]
+        missing_mask_y = self.missing_masks_y[idx]
+        noisy_slice_x[missing_mask_x, :] = 0
+        noisy_slice_y[missing_mask_y, :] = 0
 
         # Add the channel dimension
         # The final shape of the tensors is (1, NBPMS, NTURNS)
@@ -240,6 +245,10 @@ class BPMSDataset(Dataset):
             "clean_y": norm_slice_y.unsqueeze(0),
             "noisy_x": noisy_slice_x.unsqueeze(0),
             "noisy_y": noisy_slice_y.unsqueeze(0),
+            "mean_x": mean_x,
+            "mean_y": mean_y,
+            "std_x": std_x,
+            "std_y": std_y,
         }
 
     def denormalise(
@@ -275,19 +284,26 @@ def load_data(num_workers: int = 4) -> tuple[DataLoader, DataLoader, BPMSDataset
     train_dataset, val_dataset = torch.utils.data.random_split(
         dataset, [train_size, val_size]
     )
+    # Optimize DataLoader settings for better performance
     train_loader = DataLoader(
         train_dataset,
         batch_size=BATCH_SIZE,
         shuffle=True,
         num_workers=num_workers,
-        persistent_workers=True,
+        persistent_workers=True if num_workers > 0 else False,
+        pin_memory=True,  # Faster GPU transfer
+        prefetch_factor=4,  # Increased prefetch for better overlap
+        drop_last=True,  # Avoid smaller final batch
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=BATCH_SIZE,
         shuffle=False,
         num_workers=num_workers,
-        persistent_workers=True,
+        persistent_workers=True if num_workers > 0 else False,
+        pin_memory=True,  # Faster GPU transfer
+        prefetch_factor=2,  # Less prefetch needed for validation
+        drop_last=False,  # Keep all validation data
     )
     return train_loader, val_loader, dataset
 
@@ -319,10 +335,10 @@ def save_global_norm_params(dataset, filepath="global_norm_params.json"):
     Store global mean/std for x and y as JSON so we can reload in inference.
     """
     norm_params = {
-        "mean_x": dataset.global_mean_x.item(),
-        "std_x": dataset.global_std_x.item(),
-        "mean_y": dataset.global_mean_y.item(),
-        "std_y": dataset.global_std_y.item(),
+        "mean_x": dataset.mean_x.mean(dim=0).item(),
+        "std_x": dataset.std_x.mean(dim=0).item(),
+        "mean_y": dataset.mean_y.mean(dim=0).item(),
+        "std_y": dataset.std_y.mean(dim=0).item(),
     }
     with open(filepath, "w") as f:
         json.dump(norm_params, f, indent=2)

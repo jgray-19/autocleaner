@@ -3,20 +3,19 @@ import os
 
 import pytorch_lightning as pl
 import torch
+import torch.nn.functional as F
 import torch.optim as optim
-from pytorch_lightning.callbacks import Callback
 
 from config import (
     ALPHA,
-    # KICK_AMPS,
-    # LEARNING_RATE,
+    LEARNING_RATE,
     MIN_LR,
     MODEL_TYPE,
     NUM_CONSTANT_LR_EPOCHS,
     NUM_DECAY_EPOCHS,
-    NUM_EPOCHS,
     RESIDUALS,
     SCHEDULER,
+    USE_MASK,
 )
 from losses import (
     CombinedCorrelationLoss,
@@ -41,29 +40,6 @@ from ml_models.unet import (
 )
 
 
-class NoiseAnnealingCallback(Callback):
-    def __init__(
-        self, initial_multiplier=1.0, final_multiplier=0.1, max_epochs=NUM_EPOCHS
-    ):
-        super().__init__()
-        self.initial_multiplier = initial_multiplier
-        self.final_multiplier = final_multiplier
-        self.max_epochs = max_epochs
-
-    def on_train_epoch_start(self, trainer, pl_module):
-        # Compute a new multiplier (for example, a linear schedule)
-        current_epoch = trainer.current_epoch
-        new_multiplier = self.initial_multiplier - (
-            (self.initial_multiplier - self.final_multiplier)
-            * (current_epoch / self.max_epochs)
-        )
-
-        # Update the dataset's noise multiplier.
-        train_dataloader_subset = trainer.train_dataloader.dataset
-        train_dataloader_subset.dataset.update_noise_multiplier(new_multiplier)
-        pl_module.log("noise_multiplier", new_multiplier)
-
-
 class LitAutoencoder(pl.LightningModule):
     def __init__(self, model, learning_rate, weight_decay, loss_type):
         super().__init__()
@@ -81,7 +57,7 @@ class LitAutoencoder(pl.LightningModule):
         elif loss_type == "comb_ssp":
             self.ssp = SSPLoss()
             self.mse = torch.nn.functional.mse_loss
-            self.loss_fn = self.combined_ssp_loss
+            # self.loss_fn = self.combined_ssp_loss
         elif loss_type == "fft":
             self.loss_fn = self.combined_fft_loss
         else:
@@ -94,41 +70,42 @@ class LitAutoencoder(pl.LightningModule):
         fft_loss = fft_loss_per_bpm(pred, target)
         return ALPHA * mse_loss + (1 - ALPHA) * fft_loss
 
-    def combined_ssp_loss(self, pred, target):
-        ssp_loss = self.ssp(pred, target)
-        mse_loss = self.mse(pred, target)
-        return ssp_loss + 10 * mse_loss
+    # def combined_ssp_loss(self, pred, target):
 
     def forward(self, x):
         return self.model(x)
 
     def get_batch_loss(self, batch):
-        # Concatenate along batch dimension (assuming shape (B, 1, NBPMS, NTURNS))
-        # combined_noisy = torch.cat([batch["noisy_x"], batch["noisy_y"]], dim=0)
-        # combined_clean = torch.cat([batch["clean_x"], batch["clean_y"]], dim=0)
-        # combined_batch_size = combined_noisy.size(0)
-
-        # Optionally shuffle the combined batch here (if your DataLoader doesn’t already shuffle individual samples)
-        # perm = torch.randperm(combined_batch_size)
-        # combined_noisy = combined_noisy[perm]
-        # combined_clean = combined_clean[perm]
-
-        # Process through the model
-        # combined_recon = self(combined_noisy)
-
-        recon_x = self(batch["noisy_x"])
-        recon_y = self(batch["noisy_y"])
-
+        # Apply mask or residual logic to get recon_x and recon_y
         if RESIDUALS:
-            loss_x = self.loss_fn(batch["noisy_x"] - recon_x, batch["clean_x"])
-            loss_y = self.loss_fn(batch["noisy_y"] - recon_y, batch["clean_y"])
-            loss = (loss_x + loss_y) / 2
-        else:
-            # loss = self.loss_fn(combined_recon, combined_clean)
-            loss_x = self.loss_fn(recon_x, batch["clean_x"])
-            loss_y = self.loss_fn(recon_y, batch["clean_y"])
-            loss = (loss_x + loss_y) / 2
+            pred_x = self(batch["noisy_x"])
+            pred_y = self(batch["noisy_y"])
 
+            recon_x = batch["noisy_x"] - pred_x
+            recon_y = batch["noisy_y"] - pred_y
+        elif USE_MASK:
+            mask_x = self(batch["noisy_x"])
+            mask_y = self(batch["noisy_y"])
+
+            recon_x = mask_x * batch["noisy_x"]
+            recon_y = mask_y * batch["noisy_y"]
+        else:
+            recon_x = self(batch["noisy_x"])
+            recon_y = self(batch["noisy_y"])
+
+        # Now compute SNR-dependent blend for both x and y
+        loss_total = 0.0
+        for recon, clean, noisy in zip(
+            [recon_x, recon_y],
+            [batch["clean_x"], batch["clean_y"]],
+            [batch["noisy_x"], batch["noisy_y"]],
+        ):
+            loss_mse = F.mse_loss(recon, clean)
+
+            loss_ssp = self.ssp(recon, clean)
+            print(f"Loss MSE: {loss_mse:.4f}, Loss SSP: {loss_ssp:.4f}")
+            loss_total += ALPHA * loss_mse + (1 - ALPHA) * loss_ssp
+        loss = 0.5 * loss_total
         return loss, batch["noisy_x"].size(0) + batch["noisy_y"].size(0)
 
     def training_step(self, batch, batch_idx):
@@ -150,16 +127,17 @@ class LitAutoencoder(pl.LightningModule):
             weight_decay=self.weight_decay,
         )
         if SCHEDULER:
-            scheduler1 = optim.lr_scheduler.ConstantLR(
-                optimiser, factor=1, total_iters=NUM_CONSTANT_LR_EPOCHS
+            scheduler1 = optim.lr_scheduler.CosineAnnealingLR(
+                optimiser,
+                T_max=NUM_CONSTANT_LR_EPOCHS,
+                eta_min=(MIN_LR + LEARNING_RATE) / 2,
             )
-            scheduler2 = optim.lr_scheduler.CosineAnnealingLR(
+            scheduler3 = optim.lr_scheduler.CosineAnnealingLR(
                 optimiser, T_max=NUM_DECAY_EPOCHS, eta_min=MIN_LR
             )
             scheduler = optim.lr_scheduler.SequentialLR(
                 optimiser,
-                schedulers=[scheduler1, scheduler2],
-                # switch from scheduler1 → scheduler2 after so many epochs
+                schedulers=[scheduler1, scheduler3],
                 milestones=[NUM_CONSTANT_LR_EPOCHS],
             )
             return {

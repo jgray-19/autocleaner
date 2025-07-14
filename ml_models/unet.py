@@ -4,14 +4,14 @@ import torch.nn.functional as F
 import torch.nn.init as init
 from torch.utils.checkpoint import checkpoint
 
-from config import BASE_CHANNELS, MODEL_DEPTH, NUM_CHANNELS
+from config import BASE_CHANNELS, INIT, MASK_MAX_GAIN, MODEL_DEPTH, NUM_CHANNELS
 
 
 # -------------------------------------------------------------------
 # Xavier initialization helper
 def xavier_init(m):
     """
-    Xavier‐initialize Conv2d, ConvTranspose2d and Linear layers.
+    Xavier-initialize Conv2d, ConvTranspose2d and Linear layers.
     """
     if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.Linear)):
         init.xavier_uniform_(m.weight)
@@ -179,19 +179,21 @@ class UNetAutoencoderFixedDepth(nn.Module):
         )
         self.dec1 = self.conv_block(base_channels * 2, base_channels)
 
-        # Final output convolution to get back to in_channels
         self.final_conv = nn.Conv2d(base_channels, in_channels, kernel_size=1)
         self._initialize_weights()
-    
+        # (optionally) start near identity  → exp(0)=1
+        if INIT == "weiner":
+            torch.nn.init.zeros_(self.final_conv.weight)
+            torch.nn.init.zeros_(self.final_conv.bias)
 
     def conv_block(self, in_ch, out_ch):
         """A double convolution block with BatchNorm and LeakyReLU activations."""
         return nn.Sequential(
             nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_ch),
+            nn.InstanceNorm2d(out_ch, affine=True),
             nn.LeakyReLU(0.1, inplace=True),
             nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_ch),
+            nn.InstanceNorm2d(out_ch, affine=True),
             nn.LeakyReLU(0.1, inplace=True),
         )
 
@@ -237,8 +239,11 @@ class UNetAutoencoderFixedDepth(nn.Module):
         d1 = torch.cat([d1, e1], dim=1)  # (B, base_channels*2, H, W)
         d1 = self.dec1(d1)  # (B, base_channels, H, W)
 
-        out = self.final_conv(d1)  # (B, in_channels, H, W)
-        return out
+        mask_log = self.final_conv(d1)  # raw logits
+        mask = torch.exp(mask_log)  # (0, ∞)
+        if MASK_MAX_GAIN is not None:
+            mask = torch.clamp(mask, max=MASK_MAX_GAIN)
+        return mask  # pl-module will do mask * x_noisy
 
     def _pad_to_match(self, x, ref):
         """
@@ -246,15 +251,19 @@ class UNetAutoencoderFixedDepth(nn.Module):
         """
         diffY = ref.size(2) - x.size(2)
         diffX = ref.size(3) - x.size(3)
-        return F.pad(x, [diffX // 2, diffX - diffX // 2,
-                         diffY // 2, diffY - diffY // 2])
-    
+        return F.pad(
+            x, [diffX // 2, diffX - diffX // 2, diffY // 2, diffY - diffY // 2]
+        )
+
     def _initialize_weights(self):
         for m in self.modules():
-            if isinstance(m, torch.nn.Conv2d) or isinstance(m, torch.nn.ConvTranspose2d):
+            if isinstance(m, torch.nn.Conv2d) or isinstance(
+                m, torch.nn.ConvTranspose2d
+            ):
                 torch.nn.init.xavier_uniform_(m.weight)
                 if m.bias is not None:
                     torch.nn.init.zeros_(m.bias)
+
 
 class UNetAutoencoderFixedDepthCheckpoint(nn.Module):
     def __init__(self, in_channels=NUM_CHANNELS, base_channels=BASE_CHANNELS):
@@ -368,37 +377,57 @@ class UNetAutoencoderFixedDepthCheckpoint(nn.Module):
         out = self.final_conv(d1)
         return out
 
+
 class DoubleConv(nn.Module):
     """(Convolution => BN => ReLU) * 2"""
+
     def __init__(self, in_channels, out_channels, dilation=1):
         super().__init__()
         padding = ((3 - 1) // 2) * dilation
         self.double_conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=padding, dilation=dilation),
+            nn.Conv2d(
+                in_channels,
+                out_channels,
+                kernel_size=3,
+                padding=padding,
+                dilation=dilation,
+            ),
             nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(0.01, inplace=True),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=padding, dilation=dilation),
+            nn.Conv2d(
+                out_channels,
+                out_channels,
+                kernel_size=3,
+                padding=padding,
+                dilation=dilation,
+            ),
             nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(0.01, inplace=True),
         )
+
     def forward(self, x):
         return self.double_conv(x)
+
 
 def center_crop(tensor, target_height, target_width):
     _, _, h, w = tensor.size()
     start_y = (h - target_height) // 2
     start_x = (w - target_width) // 2
-    return tensor[:, :, start_y:start_y + target_height, start_x:start_x + target_width]
+    return tensor[
+        :, :, start_y : start_y + target_height, start_x : start_x + target_width
+    ]
+
 
 class UpBlock(nn.Module):
     """Upsampling block with center-cropping both tensors to match dimensions."""
+
     def __init__(self, in_channels, skip_channels, out_channels):
         super().__init__()
         # Convert in_channels (from previous decoder) to out_channels
         self.up = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
         # After upsampling, concatenate with skip (skip_channels) and then apply double conv
         self.conv = DoubleConv(skip_channels + out_channels, out_channels)
-        
+
     def forward(self, x, skip):
         x = self.up(x)
         # Determine the target spatial size (minimum of both tensors)
@@ -409,49 +438,87 @@ class UpBlock(nn.Module):
         x = torch.cat([skip, x], dim=1)
         return self.conv(x)
 
+
 class DownBlock(nn.Module):
     """Down block: double conv followed by max pooling.
-       Returns both the conv output (for skip connection) and the pooled result."""
+    Returns both the conv output (for skip connection) and the pooled result."""
+
     def __init__(self, in_channels, out_channels, dilation=1):
         super().__init__()
         self.conv = DoubleConv(in_channels, out_channels, dilation=dilation)
+
     def forward(self, x):
         x_conv = self.conv(x)
         x_pooled = F.max_pool2d(x_conv, kernel_size=2, ceil_mode=True)
         return x_conv, x_pooled
 
+
 class ModifiedUNetFixed(nn.Module):
-    def __init__(self, in_channels=NUM_CHANNELS, out_channels=NUM_CHANNELS, base_channels=BASE_CHANNELS):
+    def __init__(
+        self,
+        in_channels=NUM_CHANNELS,
+        out_channels=NUM_CHANNELS,
+        base_channels=BASE_CHANNELS,
+    ):
         super().__init__()
-        self.inc = DoubleConv(in_channels, base_channels)                     # output: base_channels (e.g., 16)
-        self.down1 = DownBlock(base_channels, base_channels * 2)                # skip: 32, pooled: 32
-        self.down2 = DownBlock(base_channels * 2, base_channels * 4, dilation=2)  # skip: 64, pooled: 64
-        self.down3 = DownBlock(base_channels * 4, base_channels * 8, dilation=4)  # skip: 128, pooled: 128
-        self.down4 = DownBlock(base_channels * 8, base_channels * 16, dilation=8) # skip: 256, pooled: 256
-        
+        self.inc = DoubleConv(
+            in_channels, base_channels
+        )  # output: base_channels (e.g., 16)
+        self.down1 = DownBlock(base_channels, base_channels * 2)  # skip: 32, pooled: 32
+        self.down2 = DownBlock(
+            base_channels * 2, base_channels * 4, dilation=2
+        )  # skip: 64, pooled: 64
+        self.down3 = DownBlock(
+            base_channels * 4, base_channels * 8, dilation=4
+        )  # skip: 128, pooled: 128
+        self.down4 = DownBlock(
+            base_channels * 8, base_channels * 16, dilation=8
+        )  # skip: 256, pooled: 256
+
         # Bottleneck: no pooling, still at lowest resolution.
-        self.bottleneck = DoubleConv(base_channels * 16, base_channels * 16, dilation=2)  # output: 256
-        
+        self.bottleneck = DoubleConv(
+            base_channels * 16, base_channels * 16, dilation=2
+        )  # output: 256
+
         # Decoder: each UpBlock takes the bottleneck/previous decoder output and the corresponding skip.
-        self.up1 = UpBlock(in_channels=base_channels * 16, skip_channels=base_channels * 16, out_channels=base_channels * 8)  # from 256 to 128
-        self.up2 = UpBlock(in_channels=base_channels * 8, skip_channels=base_channels * 8, out_channels=base_channels * 4)    # from 128 to 64
-        self.up3 = UpBlock(in_channels=base_channels * 4, skip_channels=base_channels * 4, out_channels=base_channels * 2)    # from 64 to 32
-        self.up4 = UpBlock(in_channels=base_channels * 2, skip_channels=base_channels * 2, out_channels=base_channels)        # from 32 to 16
-        
+        self.up1 = UpBlock(
+            in_channels=base_channels * 16,
+            skip_channels=base_channels * 16,
+            out_channels=base_channels * 8,
+        )  # from 256 to 128
+        self.up2 = UpBlock(
+            in_channels=base_channels * 8,
+            skip_channels=base_channels * 8,
+            out_channels=base_channels * 4,
+        )  # from 128 to 64
+        self.up3 = UpBlock(
+            in_channels=base_channels * 4,
+            skip_channels=base_channels * 4,
+            out_channels=base_channels * 2,
+        )  # from 64 to 32
+        self.up4 = UpBlock(
+            in_channels=base_channels * 2,
+            skip_channels=base_channels * 2,
+            out_channels=base_channels,
+        )  # from 32 to 16
+
         self.outc = nn.Conv2d(base_channels, out_channels, kernel_size=1)
-        self.out_activation = nn.Tanh()  # Bound outputs to [-1,1]
-        
+        if INIT == "weiner":
+            nn.init.zeros_(self.final_conv.weight)
+            nn.init.zeros_(self.final_conv.bias)
+
     def forward(self, x):
-        x1 = self.inc(x)                     # shape: (B, 16, H, W)
-        x2_skip, x2 = self.down1(x1)           # x2_skip: (B, 32, H/?, W/?), x2: (B, 32, H/2, W/2)
-        x3_skip, x3 = self.down2(x2)           # x3_skip: (B, 64, H/2, W/2), x3: (B, 64, H/4, W/4)
-        x4_skip, x4 = self.down3(x3)           # x4_skip: (B, 128, H/4, W/4), x4: (B, 128, H/8, W/8)
-        x5_skip, x5 = self.down4(x4)           # x5_skip: (B, 256, H/8, W/8), x5: (B, 256, H/16, W/16)
-        
-        x_bottleneck = self.bottleneck(x5)     # (B, 256, H/16, W/16)
-        x = self.up1(x_bottleneck, x5_skip)      # Upsample to H/8, channels become 128
-        x = self.up2(x, x4_skip)                 # Upsample to H/4, channels become 64
-        x = self.up3(x, x3_skip)                 # Upsample to H/2, channels become 32
-        x = self.up4(x, x2_skip)                 # Upsample to H, channels become 16
+        x1 = self.inc(x)
+        x2_skip, x2 = self.down1(x1)
+        x3_skip, x3 = self.down2(x2)
+        x4_skip, x4 = self.down3(x3)
+        x5_skip, x5 = self.down4(x4)
+        x_bottleneck = self.bottleneck(x5)
+        x = self.up1(x_bottleneck, x5_skip)
+        x = self.up2(x, x4_skip)
+        x = self.up3(x, x3_skip)
+        x = self.up4(x, x2_skip)
         x = self.outc(x)
-        return self.out_activation(x)
+        mask = torch.exp(x)
+        mask = torch.clamp(mask, max=MASK_MAX_GAIN)
+        return mask

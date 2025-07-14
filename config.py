@@ -5,9 +5,9 @@ from datetime import datetime
 from generic_parser.tools import DotDict
 
 # General Settings
-NUM_NOISY_PER_CLEAN = 150
+NUM_NOISY_PER_CLEAN = 10
 LOAD_MODEL = False
-RESUME_FROM_CKPT = False
+RESUME_FROM_CKPT = True
 NUM_EPOCHS = 1000
 
 if RESUME_FROM_CKPT:
@@ -20,14 +20,16 @@ if RESUME_FROM_CKPT:
     # CONFIG_NAME = "2025-07-07_18-32-46"  # Better learning rate scheduler
 
     # CONFIG_NAME = "2025-07-09_08-45-04"
-    CONFIG_NAME = "2025-07-10_10-57-09"  # Better scheduler, only 1e-4 noise, batch size 1000 (from 400)
+    # CONFIG_NAME = "2025-07-10_10-57-09"  # Better scheduler, only 1e-4 noise, batch size 1000 (from 400)
+
+    CONFIG_NAME = "2025-07-14_13-44-01"  # Now using mask
 else:
     CONFIG_NAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 # Data Settings
 NBPMS = 563
-TOTAL_TURNS = 2000  # Total turns in the simulated data file
-NTURNS = 1500  # Training window length
+TOTAL_TURNS = 3000  # Total turns in the simulated data file
+NTURNS = 1000  # Training window length
 
 # Various Clean Data Settings
 TUNE_LIST = [
@@ -51,7 +53,7 @@ TUNE_LIST = [
     [0.71, 0.68],
     [0.69, 0.68],
 ]
-COUPLING = [False]  # , 1e-4, 1e-3]
+COUPLING = [1e-4, 1e-3]
 KICK_AMPS = [1e-4]
 
 BEAMS = [1]
@@ -70,7 +72,7 @@ for beam in BEAMS:
                 )
 NUM_PARAMS = len(CLEAN_PARAM_LIST)
 
-BATCH_SIZE = 2
+BATCH_SIZE = 5
 ACCUMULATE_BATCHES = (
     NUM_PARAMS * NUM_NOISY_PER_CLEAN // (BATCH_SIZE * 2)
 )  # 2 so I get 2 logs per epoch
@@ -81,44 +83,45 @@ NLOGSTEPS = 1
 
 # NUM_PLANES = 2
 NUM_CHANNELS = 1
-PRECISION = None#"16-mixed"
+PRECISION = "32-true"
 
 BOTTLENECK_SIZE = 4
 BASE_CHANNELS = 12
 
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-4
 
-ALPHA = 0.5
+ALPHA = 0.99  # For ssp ALPHA*mse_loss + (1 - ALPHA)*ssp_loss
 
 DENOISED_INDEX = "denoised"
 HARPY_CLEAN_INDEX = "harpy_cleaned"
 SAMPLE_INDEX = "noisy"
 NONOISE_INDEX = "zero_noise"
 
-# NOISE_FACTORS = [1e-3, 9e-4, 8e-4, 7e-4, 6e-4, 5e-4, 4e-4, 3e-4, 2e-4, 1e-4, 5e-5]
-# NOISE_FACTORS = [1e-3, 5e-4, 1e-4, 5e-5]
-NOISE_FACTORS = [1e-4]
+NOISE_FACTORS = [1e-4, 1e-5]
 
 # MODEL_TYPE = "leaky"
 MODEL_TYPE = "unet_fixed"
 MODEL_DEPTH = 4
-RESIDUALS = False
+RESIDUALS = False  # we are NOT predicting additive residuals
+USE_MASK = True  # tell the pl-module to form  x̂ = M ⊙ x_noisy
 
 LOSS_TYPE = "comb_ssp"
 # LOSS_TYPE = "mse"
 SCHEDULER = True
 MIN_LR = 1e-5
-NUM_CONSTANT_LR_EPOCHS = 50
-NUM_DECAY_EPOCHS = 1000
+NUM_CONSTANT_LR_EPOCHS = 100
+NUM_DECAY_EPOCHS = 200
 
-INIT = "xavier"
 DATA_SCALING = "meanstd"
 MISSING_PROB = 0
 
+INIT = "weiner"
+MASK_MAX_GAIN = None  # Set to a float to clamp mask, e.g. 2.0
+
 experiment_config = {
     "accumulate_batches": ACCUMULATE_BATCHES,
-    "alpha": ALPHA if LOSS_TYPE in ["fft", "combined"] else None,
+    "alpha": ALPHA if LOSS_TYPE in ["fft", "combined", "comb_ssp"] else None,
     "base_channels": BASE_CHANNELS,
     "batch_size": BATCH_SIZE,
     "beams": BEAMS,
