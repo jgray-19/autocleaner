@@ -56,7 +56,7 @@ TUNE_LIST = [
     [0.69, 0.68],
 ]
 COUPLING = [1e-4, 1e-3]
-KICK_AMPS = [1e-4]
+KICK_AMPS = [1e-2, 1e-3]
 
 BEAMS = [1]
 CLEAN_PARAM_LIST = []
@@ -100,7 +100,7 @@ HARPY_CLEAN_INDEX = "harpy_cleaned"
 SAMPLE_INDEX = "noisy"
 NONOISE_INDEX = "zero_noise"
 
-NOISE_FACTORS = [1e-4, 1e-5]
+NOISE_FACTORS = [5e-4, 1e-4, 5e-5]
 
 # MODEL_TYPE = "leaky"
 MODEL_TYPE = "unet_fixed"
@@ -115,7 +115,7 @@ NUM_CONSTANT_LR_EPOCHS = 100
 NUM_DECAY_EPOCHS = 200
 
 DATA_SCALING = "meanstd"
-MISSING_PROB = 0
+MISSING_PROB = 0.01  # 1 % chance of data missing
 
 INIT = "xavier"
 

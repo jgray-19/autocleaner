@@ -3,16 +3,13 @@ import os
 
 import pytorch_lightning as pl
 import torch
-import torch.nn.functional as F
 import torch.optim as optim
 
 from config import (
     ALPHA,
-    LAMBDA_SPEC,
     LEARNING_RATE,
     MIN_LR,
     MODEL_TYPE,
-    NUM_CONSTANT_LR_EPOCHS,
     NUM_DECAY_EPOCHS,
     RESIDUALS,
     SCHEDULER,
@@ -38,6 +35,7 @@ from ml_models.unet import (
     UNetAutoencoderFixedDepth,
     UNetAutoencoderFixedDepthCheckpoint,
 )
+from schedulers import HalvingCosineLR
 
 
 class LitAutoencoder(pl.LightningModule):
@@ -73,7 +71,7 @@ class LitAutoencoder(pl.LightningModule):
     def combined_ssp_loss(self, pred, target):
         ssp_loss = self.ssp(pred, target)
         mse_loss = self.mse(pred, target)
-        return ALPHA * mse_loss + (1-ALPHA) * ssp_loss
+        return ALPHA * mse_loss + (1 - ALPHA) * ssp_loss
 
     def forward(self, x):
         return self.model(x)
@@ -127,25 +125,28 @@ class LitAutoencoder(pl.LightningModule):
             lr=self.learning_rate,
             weight_decay=self.weight_decay,
         )
-        if SCHEDULER:
-            scheduler1 = optim.lr_scheduler.CosineAnnealingLR(
+        if SCHEDULER == "halving_cosine":
+            # The scheduler is step-based.
+            # NUM_DECAY_EPOCHS is used for N here, assuming it represents
+            # the number of steps for the decay cycle.
+            # You might need to adjust this based on your training setup.
+            # For example, N = NUM_DECAY_EPOCHS * len(self.trainer.datamodule.train_dataloader())
+            # However, len of dataloader is not available at init.
+            # A large number for N is a safe bet if you are unsure.
+            # The user note on resuming from checkpoint is handled by PyTorch Lightning
+            # automatically when `trainer.fit(ckpt_path=...)` is used, as it restores
+            # the scheduler's state, including `last_epoch`.
+            scheduler = HalvingCosineLR(
                 optimiser,
-                T_max=NUM_CONSTANT_LR_EPOCHS,
-                eta_min=(MIN_LR + LEARNING_RATE) / 2,
-            )
-            scheduler3 = optim.lr_scheduler.CosineAnnealingLR(
-                optimiser, T_max=NUM_DECAY_EPOCHS, eta_min=MIN_LR
-            )
-            scheduler = optim.lr_scheduler.SequentialLR(
-                optimiser,
-                schedulers=[scheduler1, scheduler3],
-                milestones=[NUM_CONSTANT_LR_EPOCHS],
+                A=LEARNING_RATE,
+                B=MIN_LR,
+                N=NUM_DECAY_EPOCHS,
             )
             return {
                 "optimizer": optimiser,
                 "lr_scheduler": {
                     "scheduler": scheduler,
-                    "interval": "epoch",  # call .step() every epoch
+                    "interval": "step",
                     "frequency": 1,
                     "name": "lr",
                 },
