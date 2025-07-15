@@ -85,11 +85,12 @@ def denoise_validation_sample_from_checkpoint(
     batch = next(iter(val_loader))
     noisy_batch_x = batch["noisy_x"]  # shape: (B, 1, NBPMS, NTURNS)
     noisy_batch_y = batch["noisy_y"]  # shape: (B, 1, NBPMS, NTURNS)
+    combined_noisy = torch.cat([batch["noisy_x"], batch["noisy_y"]], dim=0)
 
-    # 3) Forward pass (CPU)
     with torch.no_grad():
-        recon_x, _ = lit_model.reconstruct(noisy_batch_x)
-        recon_y, _ = lit_model.reconstruct(noisy_batch_y)
+        combined_recon = lit_model.reconstruct(combined_noisy)
+        
+    recon_x, recon_y = torch.chunk(combined_recon, 2, dim=0)
 
     # Just to confirm shapes
     Bx = recon_x.size(0)
@@ -98,37 +99,44 @@ def denoise_validation_sample_from_checkpoint(
     Ny = noisy_batch_y.size(0)
     assert Bx == Nx, "Recon and input batch size mismatch for X"
     assert By == Ny, "Recon and input batch size mismatch for Y"
+    for bnum in range(Bx):
+        norm_info = {
+            "mean_x": batch["mean_x"][bnum].numpy(),
+            "std_x": batch["std_x"][bnum].numpy(),
+            "mean_y": batch["mean_y"][bnum].numpy(),
+            "std_y": batch["std_y"][bnum].numpy(),
+        }
 
-    norm_info = {
-        "mean_x": batch["mean_x"][0].numpy(),
-        "std_x": batch["std_x"][0].numpy(),
-        "mean_y": batch["mean_y"][0].numpy(),
-        "std_y": batch["std_y"][0].numpy(),
-    }
+        # If theres a problem, first check this!
+        sample = {
+            # The indexing is [batch, channel, bpm, turn]
+            "noisy_x": noisy_batch_x[bnum, 0, ...].numpy(),
+            "noisy_y": noisy_batch_y[bnum, 0, ...].numpy(),
+            "recon_x": recon_x[bnum, 0, ...].numpy(),
+            "recon_y": recon_y[bnum, 0, ...].numpy(),
+            "clean_x": batch["clean_x"][bnum, 0, ...].numpy(),
+            "clean_y": batch["clean_y"][bnum, 0, ...].numpy(),
+            "norm_info": norm_info,
+        }
+        sample_dict = denormalise_sample_dict(sample, dataset)
 
-    # If theres a problem, first check this!
-    sample = {
-        "noisy_x": noisy_batch_x[0, 0, ...].numpy(),
-        "noisy_y": noisy_batch_y[0, 0, ...].numpy(),
-        "recon_x": recon_x[0, 0, ...].numpy(),
-        "recon_y": recon_y[0, 0, ...].numpy(),
-        "clean_x": batch["clean_x"][0, 0, ...].numpy(),
-        "clean_y": batch["clean_y"][0, 0, ...].numpy(),
-        "norm_info": norm_info,
-    }
-    sample_dict = denormalise_sample_dict(sample, dataset)
+        print(f"Denoising took {time.time() - b4_denoise:.2f} seconds (CPU).")
+        print(f"Denoised Data for BPM device {device_index}")
 
-    print(f"Denoising took {time.time() - b4_denoise:.2f} seconds (CPU).")
-    print(f"Denoised Data for BPM device {device_index}")
+        # 5) (Optional) Save config and plot data
+        if do_plot:
+            # If you wish to save your current config to JSON:
+            save_experiment_config(PLOT_DIR)
 
-    # 5) (Optional) Save config and plot data
-    if do_plot:
-        # If you wish to save your current config to JSON:
-        save_experiment_config(PLOT_DIR)
-
-        # Plot the denoised data for the chosen BPM index
-        plot_denoised_data(sample_dict, device_index)
-        plt.show()
+            # Plot the denoised data for the chosen BPM index
+            plot_denoised_data(
+                sample_dict,
+                device_index,
+                spectrum_id=f"denoised_spectrum_xy_{bnum}",
+                tbt_id=f"denoised_tbt_xy_{bnum}",
+                tbt_diff_id=f"denoised_tbt_diff_xy_{bnum}",
+            )
+    plt.show()
 
     return sample_dict
 

@@ -5,10 +5,10 @@ from datetime import datetime
 from generic_parser.tools import DotDict
 
 # General Settings
-NUM_NOISY_PER_CLEAN = 20
+NUM_NOISY_PER_CLEAN = 40
 LOAD_MODEL = False
-RESUME_FROM_CKPT = False
-NUM_EPOCHS = 1000
+RESUME_FROM_CKPT = True
+NUM_EPOCHS = 2000
 
 if RESUME_FROM_CKPT:
     # CONFIG_NAME = "2025-07-04_17-52-43" # 1000 mseloss
@@ -22,7 +22,9 @@ if RESUME_FROM_CKPT:
     # CONFIG_NAME = "2025-07-09_08-45-04"
     # CONFIG_NAME = "2025-07-10_10-57-09"  # Better scheduler, only 1e-4 noise, batch size 1000 (from 400)
 
-    CONFIG_NAME = "2025-07-14_13-44-01"  # Now using mask
+    # CONFIG_NAME = "2025-07-14_18-17-15"  # Now using residuals
+    CONFIG_NAME = "2025-07-14_18-51-31"  # Residuals, 0.5 alpha, 16 base channels
+
 else:
     CONFIG_NAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
@@ -75,7 +77,7 @@ NUM_PARAMS = len(CLEAN_PARAM_LIST)
 BATCH_SIZE = 5
 ACCUMULATE_BATCHES = (
     NUM_PARAMS * NUM_NOISY_PER_CLEAN // (BATCH_SIZE * 2)
-)  # 2 so I get 2 logs per epoch
+)  # 2 so I get 2 steps per epoch
 TRAIN_RATIO = 0.8
 
 MODEL_SAVE_PATH = "conv_autoencoder.pth"
@@ -86,12 +88,12 @@ NUM_CHANNELS = 1
 PRECISION = "32-true"
 
 BOTTLENECK_SIZE = 4
-BASE_CHANNELS = 12
+BASE_CHANNELS = 16
 
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-4
 
-ALPHA = 0.99  # For ssp ALPHA*mse_loss + (1 - ALPHA)*ssp_loss
+ALPHA = 0.5  # For ssp ALPHA*mse_loss + (1 - ALPHA)*ssp_loss
 
 DENOISED_INDEX = "denoised"
 HARPY_CLEAN_INDEX = "harpy_cleaned"

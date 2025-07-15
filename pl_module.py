@@ -73,7 +73,7 @@ class LitAutoencoder(pl.LightningModule):
     def combined_ssp_loss(self, pred, target):
         ssp_loss = self.ssp(pred, target)
         mse_loss = self.mse(pred, target)
-        return ssp_loss + 10 * mse_loss
+        return ALPHA * mse_loss + (1-ALPHA) * ssp_loss
 
     def forward(self, x):
         return self.model(x)

@@ -122,10 +122,12 @@ if __name__ == "__main__":
     batch = next(iter(val_loader))
     noisy_batch_x = batch["noisy_x"]  # shape: (B, 1, NBPMS, NTURNS)
     noisy_batch_y = batch["noisy_y"]  # shape: (B, 1, NBPMS, NTURNS)
+    combined_noisy = torch.cat([batch["noisy_x"], batch["noisy_y"]], dim=0)
 
     with torch.no_grad():
-        recon_x, _ = lit_model.reconstruct(noisy_batch_x)
-        recon_y, _ = lit_model.reconstruct(noisy_batch_y)
+        combined_recon = lit_model.reconstruct(combined_noisy)
+        
+    recon_x, recon_y = torch.chunk(combined_recon, 2, dim=0)
 
     assert (
         recon_x.size(0)

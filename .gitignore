@@ -179,5 +179,6 @@ model_b1/*.seq
 acc-models-lhc
 *.ini
 analysis/
-data/*[0-9].sdds
-data/*tfs.bz2
+data/*
+autopy
+model_b1*
