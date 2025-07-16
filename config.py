@@ -5,7 +5,7 @@ from datetime import datetime
 from generic_parser.tools import DotDict
 
 # General Settings
-NUM_NOISY_PER_CLEAN = 40
+NUM_NOISY_PER_CLEAN = 10
 LOAD_MODEL = False
 RESUME_FROM_CKPT = True
 NUM_EPOCHS = 2000
@@ -23,7 +23,15 @@ if RESUME_FROM_CKPT:
     # CONFIG_NAME = "2025-07-10_10-57-09"  # Better scheduler, only 1e-4 noise, batch size 1000 (from 400)
 
     # CONFIG_NAME = "2025-07-14_18-17-15"  # Now using residuals
-    CONFIG_NAME = "2025-07-14_18-51-31"  # Residuals, 0.5 alpha, 16 base channels
+    # CONFIG_NAME = "2025-07-14_18-51-31"  # Residuals, 0.5 alpha, 16 base channels
+
+    # CONFIG_NAME = "2025-07-15_12-17-23" # 60 lots of data, more noise factors, custom scheduler, more kicks (even x & y hopefully)
+
+    # CONFIG_NAME = "2025-07-15_17-03-07" # Using an identity penalty + loss with residuals only. 
+
+    # CONFIG_NAME = "2025-07-15_22-39-40" # Back to comb_ssp - No recreating the spectrum. 
+
+    CONFIG_NAME = "2025-07-16_07-25-15" # Using residuals again, but no identity and using spectral convergence loss
 
 else:
     CONFIG_NAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -31,7 +39,7 @@ else:
 # Data Settings
 NBPMS = 563
 TOTAL_TURNS = 3000  # Total turns in the simulated data file
-NTURNS = 1000  # Training window length
+NTURNS = 1500  # Training window length
 
 # Various Clean Data Settings
 TUNE_LIST = [
@@ -55,7 +63,7 @@ TUNE_LIST = [
     [0.71, 0.68],
     [0.69, 0.68],
 ]
-COUPLING = [1e-4, 1e-3]
+COUPLING = [False, 1e-4, 1e-3]
 KICK_AMPS = [1e-2, 1e-3]
 
 BEAMS = [1]
@@ -74,7 +82,7 @@ for beam in BEAMS:
                 )
 NUM_PARAMS = len(CLEAN_PARAM_LIST)
 
-BATCH_SIZE = 5
+BATCH_SIZE = 4
 ACCUMULATE_BATCHES = (
     NUM_PARAMS * NUM_NOISY_PER_CLEAN // (BATCH_SIZE * 2)
 )  # 2 so I get 2 steps per epoch
@@ -92,6 +100,7 @@ BASE_CHANNELS = 16
 
 LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-4
+IDENTITY_PENALTY = 0
 
 ALPHA = 0.5  # For ssp ALPHA*mse_loss + (1 - ALPHA)*ssp_loss
 
@@ -107,12 +116,12 @@ MODEL_TYPE = "unet_fixed"
 MODEL_DEPTH = 4
 RESIDUALS = True
 
-LOSS_TYPE = "comb_ssp"
-# LOSS_TYPE = "mse"
+# LOSS_TYPE = "comb_ssp"
+LOSS_TYPE = "residual"
 SCHEDULER = True
-MIN_LR = 1e-5
-NUM_CONSTANT_LR_EPOCHS = 100
-NUM_DECAY_EPOCHS = 200
+MIN_LR = 1e-4
+# NUM_CONSTANT_LR_EPOCHS = 100
+NUM_DECAY_EPOCHS = 400
 
 DATA_SCALING = "meanstd"
 MISSING_PROB = 0.01  # 1 % chance of data missing
@@ -121,7 +130,7 @@ INIT = "xavier"
 
 experiment_config = {
     "accumulate_batches": ACCUMULATE_BATCHES,
-    "alpha": ALPHA if LOSS_TYPE in ["fft", "combined", "comb_ssp"] else None,
+    "alpha": ALPHA if LOSS_TYPE in ["fft", "combined", "comb_ssp", "residual"] else None,
     "base_channels": BASE_CHANNELS,
     "batch_size": BATCH_SIZE,
     "beams": BEAMS,
@@ -133,6 +142,7 @@ experiment_config = {
     "load_model": LOAD_MODEL,
     "loss_type": LOSS_TYPE,
     "min_lr": MIN_LR if SCHEDULER else None,
+    "identity_penalty": IDENTITY_PENALTY,
     "nbpms": NBPMS,
     "noise_factor": NOISE_FACTORS,
     "num_channels": NUM_CHANNELS,

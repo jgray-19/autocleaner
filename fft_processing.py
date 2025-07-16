@@ -32,7 +32,7 @@ def windowed_padded_rfft_torch(
 
     # Get frequency mask
     HARPY_INPUT["turn_bits"] = int(np.log2(padded_len))
-    freq_mask = get_freq_mask(HARPY_INPUT, tunes, 2 / matrix.shape[1])
+    freq_mask = get_freq_mask(HARPY_INPUT, tunes, 2 / matrix.shape[1]) # Tunes not used here. 
     n_bins = np.sum(freq_mask).item() // sub_bins
     n_bpms = matrix.shape[0]
 

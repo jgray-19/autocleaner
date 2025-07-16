@@ -13,12 +13,14 @@ from config import (
     NUM_DECAY_EPOCHS,
     RESIDUALS,
     SCHEDULER,
+    IDENTITY_PENALTY,
 )
 from losses import (
     CombinedCorrelationLoss,
     CorrelationLoss,
     SSPLoss,
     fft_loss_per_bpm,
+    ResidualSpectralLoss,
 )
 from ml_models.conv_2d import (
     Conv2DAutoencoder,
@@ -44,6 +46,7 @@ class LitAutoencoder(pl.LightningModule):
         self.model = model
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
+        self.need_residual = False
         if loss_type == "mse":
             self.loss_fn = torch.nn.functional.mse_loss
         elif loss_type == "corr":
@@ -56,6 +59,13 @@ class LitAutoencoder(pl.LightningModule):
             self.ssp = SSPLoss()
             self.mse = torch.nn.functional.mse_loss
             self.loss_fn = self.combined_ssp_loss
+        elif loss_type == "residual":
+            self.loss_fn = ResidualSpectralLoss(
+                alpha=ALPHA, 
+                beta=1-ALPHA, 
+                lambda_id=IDENTITY_PENALTY
+            )
+            self.need_residual = True
         elif loss_type == "fft":
             self.loss_fn = self.combined_fft_loss
         else:
@@ -76,17 +86,17 @@ class LitAutoencoder(pl.LightningModule):
     def forward(self, x):
         return self.model(x)
 
-    def reconstruct(self, x_noisy):
+    def reconstruct(self, noisy):
         """Reconstruct the input from noisy data."""
 
         # Forward pass through the model
-        recon_x = self.model(x_noisy)
+        recon = self.model(noisy)
         if RESIDUALS:
             # If using residuals, return the noisy input minus the reconstruction
-            return x_noisy - recon_x
+            return noisy - recon
         else:
             # Otherwise, just return the reconstruction
-            return recon_x
+            return recon
 
     def get_batch_loss(self, batch):
         # Concatenate along batch dimension (assuming shape (B, 1, NBPMS, NTURNS))
@@ -96,7 +106,10 @@ class LitAutoencoder(pl.LightningModule):
 
         # Process through the model
         combined_recon = self.reconstruct(combined_noisy)
-        loss = self.loss_fn(combined_recon, combined_clean)
+        if self.need_residual:
+            loss = self.loss_fn(combined_noisy, combined_clean, combined_recon)
+        else:
+            loss = self.loss_fn(combined_recon, combined_clean)
 
         return loss, combined_batch_size
 
@@ -125,7 +138,7 @@ class LitAutoencoder(pl.LightningModule):
             lr=self.learning_rate,
             weight_decay=self.weight_decay,
         )
-        if SCHEDULER == "halving_cosine":
+        if SCHEDULER:
             # The scheduler is step-based.
             # NUM_DECAY_EPOCHS is used for N here, assuming it represents
             # the number of steps for the decay cycle.

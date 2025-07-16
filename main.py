@@ -42,6 +42,7 @@ if __name__ == "__main__":
     else:
         free, available = torch.cuda.mem_get_info()
         print("Current GPU use:", (available - free) / 1e9, "GB")
+        torch.set_float32_matmul_precision("medium")
 
     # Set up reproducibility
     torch.manual_seed(SEED)

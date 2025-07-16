@@ -202,6 +202,56 @@ class SSPLoss(nn.Module):
         diff_l2 = torch.sqrt((diff.real**2 + diff.imag**2).sum(dim=1))
         p_l2 = torch.sqrt((p_vec.real**2 + p_vec.imag**2).sum(dim=1))
         t_l2 = torch.sqrt((t_vec.real**2 + t_vec.imag**2).sum(dim=1))
-
-        ssp = diff_l2 / (p_l2 + t_l2 + self.eps)
+        den = torch.clamp(p_l2 + t_l2, min=1e-8)
+        ssp = diff_l2 / den
         return ssp.mean()
+
+class ResidualSpectralLoss(nn.Module):
+    """
+    Loss = a·MSE_time(cleaned, clean)
+         + β·MSE_spectrum(residual_pred, residual_true)
+         + λ·||residual_pred||_2^2
+    """
+
+    def __init__(self, alpha: float = 1.0, beta: float = 0.1, lambda_id: float = 1e-3):
+        """
+        Args:
+            alpha:    weight for the time-domain MSE on the cleaned signal
+            beta:     weight for the spectral-domain MSE on the residual
+            lambda_id: weight for the L2 identity penalty on the predicted residual
+        """
+        super().__init__()
+        self.time_mse = nn.MSELoss()
+        self.alpha = alpha
+        self.beta = beta
+        self.lambda_id = lambda_id
+
+    def forward(
+        self, noisy: torch.Tensor, clean: torch.Tensor, cleaned: torch.Tensor
+    ) -> torch.Tensor:
+        # 1) time-domain MSE on the cleaned output
+        loss_time = self.time_mse(cleaned, clean)
+
+        # 2) compute true & predicted residuals
+        r_true = noisy - clean
+        r_pred = noisy - cleaned
+
+        # 3) FFT & magnitude of residuals
+        R_true = torch.fft.rfft(r_true, dim=-1)
+        R_pred = torch.fft.rfft(r_pred, dim=-1)
+        mag_true = torch.sqrt(R_true.real**2 + R_true.imag**2 + 1e-12)
+        mag_pred = torch.sqrt(R_pred.real**2 + R_pred.imag**2 + 1e-12)
+
+        # 4) spectral convergence loss on the residual magnitudes
+        # ||mag_pred - mag_true||_F / (||mag_true||_F + eps)
+        eps = 1e-8
+        diff = mag_pred - mag_true
+        num = torch.norm(diff, p="fro")
+        denom = torch.norm(mag_true, p="fro") + eps
+        loss_spec = num / denom
+
+        # 5) L2 identity penalty on predicted residual
+        loss_id = self.lambda_id * torch.mean(r_pred**2)
+
+        # 6) combine all terms
+        return self.alpha * loss_time + self.beta * loss_spec + loss_id
