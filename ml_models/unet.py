@@ -525,3 +525,59 @@ class ModifiedUNetFixed(nn.Module):
         x = self.up4(x, x2_skip)  # Upsample to H, channels become 16
         x = self.outc(x)
         return self.out_activation(x)
+
+
+class GatedUNetAutoencoder(UNetAutoencoderFixedDepth):
+    """
+    Extends the fixed-depth UNet to output both a residual proposal and a gate.
+    The final output channels are: [residual, gate_logits].
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Replace final conv to output 2 channels instead of 1
+        # Assume original final_conv: nn.Conv2d(features, 1, kernel_size, padding)
+        in_ch = self.final_conv.in_channels
+        k = self.final_conv.kernel_size
+        p = self.final_conv.padding
+        # Overwrite final_conv
+        self.final_conv = nn.Conv2d(in_ch, 2, kernel_size=k, padding=p)
+
+    def forward(self, x_noisy):
+        # Encoder + decoder forward from base class
+        features = self.encoder(x_noisy)
+        # run through decoder layers (assuming UNet structure)
+        # obtain upsampled features for final_conv
+        out = self.decoder_forward(features)
+
+        # Final conv produces 2 channels
+        out = self.final_conv(out)  # [B,2,H,W]
+        h = out[:, 0:1, :, :]  # residual proposal
+        u = out[:, 1:2, :, :]  # gate logits map
+
+        # Global pool u to get one logit per sample
+        g_logit = F.adaptive_avg_pool2d(u, 1)  # [B,1,1,1]
+        g = torch.sigmoid(g_logit)  # [B,1,1,1]
+        # Broadcast g to match h
+        g = g.expand_as(h)  # [B,1,H,W]
+
+        # Compute gated residual and denoised output
+        r_pred = g * h  # [B,1,H,W]
+        denoised = x_noisy - r_pred
+        return denoised, g
+
+    def decoder_forward(self, bottleneck_feat):
+        """
+        Helper that runs the decoder path. Assumes `self.decoder_blocks` exists
+        and processes features in reverse order. Adjust if your base defines differently.
+        """
+        x = bottleneck_feat
+        for block in self.decoder_blocks:
+            x = block(x)
+        return x
+
+
+# Usage in LightningModule:
+# base = UNetAutoencoderFixedDepth()
+# model = GatedUNetAutoencoder()
+# denoised, gate = model(noisy_input)

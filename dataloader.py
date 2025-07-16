@@ -235,8 +235,9 @@ class BPMSDataset(Dataset):
         # Use pre-computed masks for missing data
         missing_mask_x = self.missing_masks_x[idx]
         missing_mask_y = self.missing_masks_y[idx]
-        norm_slice_x[missing_mask_x, :] = 0 # I am not asking the autoencoder to reproduce the missing data, just deal with it
-        norm_slice_y[missing_mask_x, :] = 0
+        # I am not asking the autoencoder to reproduce the missing data, just deal with it
+        norm_slice_x[missing_mask_x, :] = 0
+        norm_slice_y[missing_mask_y, :] = 0
         noisy_slice_x[missing_mask_x, :] = 0
         noisy_slice_y[missing_mask_y, :] = 0
 

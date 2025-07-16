@@ -60,7 +60,7 @@ coupling = [
     # 3e-3,
 ]
 
-kick_amps = [1e-2, 1e-3]
+kick_amps = [1e-4, 1e-3]
 
 
 def delete_unwanted_files(beam, nturns, coupling_knob, tunes, kick_amp):
@@ -147,8 +147,7 @@ def process_configuration(args):
 
 if __name__ == "__main__":
     configs = []
-    # for beam in [1, 2]:
-    for beam in [1]:
+    for beam in [1, 2]:
         for tunes in tune_list:
             for cknob in coupling:
                 for kick in kick_amps:
