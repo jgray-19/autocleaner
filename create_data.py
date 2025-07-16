@@ -54,7 +54,7 @@ tune_list = [
     [0.69, 0.68],
 ]
 coupling = [
-    # False,
+    False,
     1e-4,
     1e-3,
     # 3e-3,
@@ -157,5 +157,8 @@ if __name__ == "__main__":
                         f"Processing beam {beam}, tunes {tunes}, coupling {cknob} kick {kick}"
                     )
 
-    with concurrent.futures.ProcessPoolExecutor() as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
         executor.map(process_configuration, configs)
+    # for config in configs:
+    #     process_configuration(config)
+    #     log.info(f"Processed configuration: {config}")
