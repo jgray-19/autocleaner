@@ -30,7 +30,7 @@ def denoise_validation_sample_from_checkpoint(
     checkpoint_name: str,
     val_loader,
     dataset: BPMSDataset,
-    device_index: int = 111,
+    device_index: int = 112,
     do_plot: bool = True,
 ):
     """
@@ -154,8 +154,7 @@ if __name__ == "__main__":
 
     sample_dict = denoise_validation_sample_from_checkpoint(
         checkpoint_name=CONFIG_NAME,
-        # checkpoint_name="2025-03-27_16-43-06",
-        # checkpoint_name="2025-03-27_16-54-52",
+        # checkpoint_name="2025-07-17_13-53-50",
         val_loader=val_loader,
         dataset=dataset,
     )

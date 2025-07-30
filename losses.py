@@ -242,12 +242,10 @@ class ResidualSpectralLoss(nn.Module):
         mag_true = torch.sqrt(R_true.real**2 + R_true.imag**2 + 1e-12)
         mag_pred = torch.sqrt(R_pred.real**2 + R_pred.imag**2 + 1e-12)
 
-        # 4) spectral convergence loss on the residual magnitudes
         # ||mag_pred - mag_true||_F / (||mag_true||_F + eps)
-        eps = 1e-8
         diff = mag_pred - mag_true
         num = torch.norm(diff, p="fro")
-        denom = torch.norm(mag_true, p="fro") + eps
+        denom = torch.norm(mag_true, p="fro")
         loss_spec = num / denom
 
         # 5) L2 identity penalty on predicted residual

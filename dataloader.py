@@ -31,7 +31,9 @@ torch.backends.cudnn.deterministic = (
 )
 
 
-def load_clean_data(sdds_data_path, model_dir) -> tuple[torch.Tensor, torch.Tensor]:
+def load_clean_data(
+    sdds_data_path: Path, model_dir: Path
+) -> tuple[torch.Tensor, torch.Tensor]:
     sdds_data = read_tbt(sdds_data_path)
 
     # Read the twiss file for beta functions.
@@ -45,11 +47,16 @@ def load_clean_data(sdds_data_path, model_dir) -> tuple[torch.Tensor, torch.Tens
     x_data = sdds_data.matrices[0].X.to_numpy()
     y_data = sdds_data.matrices[0].Y.to_numpy()
 
+    if "b1" in model_dir.name:
+       # For b2, there is 1 extra BPM
+       x_data = np.pad(x_data, ((0, 1), (0, 0)), mode="constant")
+       y_data = np.pad(y_data, ((0, 1), (0, 0)), mode="constant")
+
     assert x_data.shape[0] == NBPMS, (
-        f"Missing some BPMs, x data has shape: {x_data.shape}"
+       f"Missing some BPMs, x data has shape: {x_data.shape}"
     )
     assert y_data.shape[0] == NBPMS, (
-        f"Missing some BPMs, y data has shape: {y_data.shape}"
+       f"Missing some BPMs, y data has shape: {y_data.shape}"
     )
 
     # Since we're dividing by ones, skip the division for performance

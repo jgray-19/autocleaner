@@ -240,7 +240,8 @@ class UNetAutoencoderFixedDepth(nn.Module):
         d1 = torch.cat([d1, e1], dim=1)  # (B, 16, H, W)
         d1 = self.dec1(d1)  # (B, 16, H, W)
 
-        out = self.final_conv(d1)  # (B, in_channels, H, W)
+        # Final output convolution
+        out = self.final_conv(d1)
         return out
 
     def _pad_to_match(self, x, ref):
@@ -544,14 +545,46 @@ class GatedUNetAutoencoder(UNetAutoencoderFixedDepth):
         self.final_conv = nn.Conv2d(in_ch, 2, kernel_size=k, padding=p)
 
     def forward(self, x_noisy):
-        # Encoder + decoder forward from base class
-        features = self.encoder(x_noisy)
-        # run through decoder layers (assuming UNet structure)
-        # obtain upsampled features for final_conv
-        out = self.decoder_forward(features)
+        # ----- Encoder pathway -----
+        e1 = self.enc1(x_noisy)
+        p1 = F.max_pool2d(e1, 2)
+        e2 = self.enc2(p1)
+        p2 = F.max_pool2d(e2, 2)
+        e3 = self.enc3(p2)
+        p3 = F.max_pool2d(e3, 2)
+        e4 = self.enc4(p3)
+        p4 = F.max_pool2d(e4, 2)
+
+        # Bottleneck
+        b = self.bottleneck(p4)
+
+        # ----- Decoder pathway with skip connections -----
+        d4 = self.up4(b)
+        if d4.size()[2:] != e4.size()[2:]:
+            d4 = self._pad_to_match(d4, e4)
+        d4 = torch.cat([d4, e4], dim=1)
+        d4 = self.dec4(d4)
+
+        d3 = self.up3(d4)
+        if d3.size()[2:] != e3.size()[2:]:
+            d3 = self._pad_to_match(d3, e3)
+        d3 = torch.cat([d3, e3], dim=1)
+        d3 = self.dec3(d3)
+
+        d2 = self.up2(d3)
+        if d2.size()[2:] != e2.size()[2:]:
+            d2 = self._pad_to_match(d2, e2)
+        d2 = torch.cat([d2, e2], dim=1)
+        d2 = self.dec2(d2)
+
+        d1 = self.up1(d2)
+        if d1.size()[2:] != e1.size()[2:]:
+            d1 = self._pad_to_match(d1, e1)
+        d1 = torch.cat([d1, e1], dim=1)
+        d1 = self.dec1(d1)
 
         # Final conv produces 2 channels
-        out = self.final_conv(out)  # [B,2,H,W]
+        out = self.final_conv(d1)  # [B,2,H,W]
         h = out[:, 0:1, :, :]  # residual proposal
         u = out[:, 1:2, :, :]  # gate logits map
 
@@ -562,9 +595,9 @@ class GatedUNetAutoencoder(UNetAutoencoderFixedDepth):
         g = g.expand_as(h)  # [B,1,H,W]
 
         # Compute gated residual and denoised output
-        r_pred = g * h  # [B,1,H,W]
-        denoised = x_noisy - r_pred
-        return denoised, g
+        return g * h  # [B,1,H,W]
+        # denoised = x_noisy - r_pred
+        # return denoised, g
 
     def decoder_forward(self, bottleneck_feat):
         """

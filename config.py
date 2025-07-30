@@ -31,15 +31,20 @@ if RESUME_FROM_CKPT:
 
     # CONFIG_NAME = "2025-07-15_22-39-40" # Back to comb_ssp - No recreating the spectrum. 
 
-    CONFIG_NAME = "2025-07-16_07-25-15" # Using residuals again, but no identity and using spectral convergence loss
+    # CONFIG_NAME = "2025-07-16_07-25-15" # Using residuals again, but no identity and using spectral convergence loss
+    
+    # CONFIG_NAME = "2025-07-16_20-02-57" # Working with B2 now, 12 base channels, 100 -> 500 -> 1000 turns
 
+    # CONFIG_NAME = "2025-07-17_13-53-50"
+
+    CONFIG_NAME = "2025-07-24_10-54-43"
 else:
     CONFIG_NAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 # Data Settings
-NBPMS = 563
+NBPMS = 564
 TOTAL_TURNS = 3000  # Total turns in the simulated data file
-NTURNS = 1500  # Training window length
+NTURNS = 1000  # Training window length
 
 # Various Clean Data Settings
 TUNE_LIST = [
@@ -64,14 +69,16 @@ TUNE_LIST = [
     [0.69, 0.68],
 ]
 COUPLING = [False, 1e-4, 1e-3]
-KICK_AMPS = [1e-2, 1e-3]
+KICK_AMPS = [1e-4, 5e-5]
 
-BEAMS = [1]
+BEAMS = [1, 2]
 CLEAN_PARAM_LIST = []
 for beam in BEAMS:
     for tunes in TUNE_LIST:
         for coupling in COUPLING:
             for kick_amp in KICK_AMPS:
+                if beam == 2 and tunes == [0.69, 0.68]:
+                    continue  # Skip this combination as it is unstable.
                 CLEAN_PARAM_LIST.append(
                     {
                         "beam": beam,
@@ -83,9 +90,10 @@ for beam in BEAMS:
 NUM_PARAMS = len(CLEAN_PARAM_LIST)
 
 BATCH_SIZE = 4
-ACCUMULATE_BATCHES = (
-    NUM_PARAMS * NUM_NOISY_PER_CLEAN // (BATCH_SIZE * 2)
-)  # 2 so I get 2 steps per epoch
+# ACCUMULATE_BATCHES = (
+#     NUM_PARAMS * NUM_NOISY_PER_CLEAN // (BATCH_SIZE * 5)
+# )  # 5 so I get 5 steps per epoch
+ACCUMULATE_BATCHES = 40
 TRAIN_RATIO = 0.8
 
 MODEL_SAVE_PATH = "conv_autoencoder.pth"
@@ -96,32 +104,32 @@ NUM_CHANNELS = 1
 PRECISION = "32-true"
 
 BOTTLENECK_SIZE = 4
-BASE_CHANNELS = 16
+BASE_CHANNELS = 12
 
 LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-4
 IDENTITY_PENALTY = 0
 
-ALPHA = 0.5  # For ssp ALPHA*mse_loss + (1 - ALPHA)*ssp_loss
+ALPHA = 0.5 # For ssp ALPHA*mse_loss + (1 - ALPHA)*ssp_loss
 
 DENOISED_INDEX = "denoised"
 HARPY_CLEAN_INDEX = "harpy_cleaned"
 SAMPLE_INDEX = "noisy"
 NONOISE_INDEX = "zero_noise"
 
-NOISE_FACTORS = [5e-4, 1e-4, 5e-5]
+NOISE_FACTORS = [5e-4, 3e-4, 1e-4, 5e-5, 1e-5, 5e-6]
 
 # MODEL_TYPE = "leaky"
 MODEL_TYPE = "unet_fixed"
 MODEL_DEPTH = 4
 RESIDUALS = True
 
-# LOSS_TYPE = "comb_ssp"
-LOSS_TYPE = "residual"
+LOSS_TYPE = "comb_ssp_resid"
+# LOSS_TYPE = "residual"
 SCHEDULER = True
 MIN_LR = 1e-4
 # NUM_CONSTANT_LR_EPOCHS = 100
-NUM_DECAY_EPOCHS = 400
+NUM_DECAY_EPOCHS = 1000
 
 DATA_SCALING = "meanstd"
 MISSING_PROB = 0.01  # 1 % chance of data missing

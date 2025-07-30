@@ -36,6 +36,7 @@ from ml_models.unet import (
     UNetAutoencoder,
     UNetAutoencoderFixedDepth,
     UNetAutoencoderFixedDepthCheckpoint,
+    GatedUNetAutoencoder,
 )
 from schedulers import HalvingCosineLR
 
@@ -59,6 +60,11 @@ class LitAutoencoder(pl.LightningModule):
             self.ssp = SSPLoss()
             self.mse = torch.nn.functional.mse_loss
             self.loss_fn = self.combined_ssp_loss
+        elif loss_type == "comb_ssp_resid":
+            self.ssp = SSPLoss()
+            self.mse = torch.nn.functional.mse_loss
+            self.loss_fn = self.combined_ssp_loss_resid
+            self.need_residual = True
         elif loss_type == "residual":
             self.loss_fn = ResidualSpectralLoss(
                 alpha=ALPHA, 
@@ -81,6 +87,14 @@ class LitAutoencoder(pl.LightningModule):
     def combined_ssp_loss(self, pred, target):
         ssp_loss = self.ssp(pred, target)
         mse_loss = self.mse(pred, target)
+        return ALPHA * mse_loss + (1 - ALPHA) * ssp_loss
+
+    def combined_ssp_loss_resid(self, noisy, clean, cleaned):
+        # 2) compute true & predicted residuals
+        mse_loss = self.mse(cleaned, clean)
+        r_true = noisy - clean
+        r_pred = noisy - cleaned
+        ssp_loss = self.ssp(r_pred, r_true)
         return ALPHA * mse_loss + (1 - ALPHA) * ssp_loss
 
     def forward(self, x):
@@ -151,9 +165,9 @@ class LitAutoencoder(pl.LightningModule):
             # the scheduler's state, including `last_epoch`.
             scheduler = HalvingCosineLR(
                 optimiser,
-                A=LEARNING_RATE,
-                B=MIN_LR,
-                N=NUM_DECAY_EPOCHS,
+                a=LEARNING_RATE,
+                b=MIN_LR,
+                n=NUM_DECAY_EPOCHS,
             )
             return {
                 "optimizer": optimiser,
@@ -200,5 +214,7 @@ def get_model():
         return ModifiedUNetFixed()
     elif MODEL_TYPE == "fno":
         return FNO2d()
+    elif MODEL_TYPE == "gated_unet":
+        return GatedUNetAutoencoder()
     else:
         raise ValueError(f"Unknown model type: {MODEL_TYPE}")
