@@ -26,7 +26,7 @@ from config import (
     print_config,
     save_experiment_config,
 )
-from dataloader import denormalise_sample_dict, load_data, save_global_norm_params
+from dataloader import denormalise_sample_dict, load_data
 from pl_module import (
     LitAutoencoder,
     find_newest_file,
@@ -112,9 +112,6 @@ if __name__ == "__main__":
         b4_save = time.time()
         torch.save(model.state_dict(), MODEL_SAVE_PATH)
         print(f"Model saved. Took {time.time() - b4_save:.2f} seconds.")
-
-        # Save global normalization parameters
-        save_global_norm_params(dataset, filepath="global_norm_params.json")
 
     # Denoise validation data
     print("Denoising validation data...")

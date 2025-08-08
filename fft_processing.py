@@ -2,9 +2,9 @@ import numpy as np
 import torch
 from omc3.harpy.frequency import get_freq_mask, windowing
 
-from config import HARPY_INPUT, NTURNS
+from config import HARPY_INPUT, TOTAL_TURNS
 
-window = windowing(NTURNS, window="hann")
+window = windowing(TOTAL_TURNS, window="hann")
 window = torch.tensor(window, dtype=torch.float64)
 
 

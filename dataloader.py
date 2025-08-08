@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import tfs
+# import tfs
 import torch
 from lhcng.model import get_model_dir
 from lhcng.tracking import get_tbt_path
@@ -72,26 +72,21 @@ def load_clean_data(
 def write_data(
     x_data: torch.Tensor,
     y_data: torch.Tensor,
-    model_dir: Path,
+    noisy_tbt_path: Path,
     tbt_path: Path,
-    nturns: int = NTURNS,
+    nturns: int = TOTAL_TURNS,
 ) -> tuple[Path, TbtData]:
-    model_dat = tfs.read(model_dir / "twiss.tfs.bz2", index="NAME")
-    # sqrt_betax = np.sqrt(model_dat["BETX"].values)
-    # sqrt_betay = np.sqrt(model_dat["BETY"].values)
-    # For now, let's not normalise the data.
-    sqrt_betax = sqrt_betay = np.ones(NBPMS)
+    tbt_data = read_tbt(noisy_tbt_path)
+    x_bpm_names = tbt_data.matrices[0].X.index
+    y_bpm_names = tbt_data.matrices[0].Y.index
 
-    x_bpm_names = model_dat.index.to_list()
-    y_bpm_names = model_dat.index.to_list()
-
-    assert x_data.shape[0] == NBPMS, "Missing BPMs"
-    assert y_data.shape[0] == NBPMS, "Missing BPMs"
+    # assert x_data.shape[0] == NBPMS, "Missing BPMs"
+    # assert y_data.shape[0] == NBPMS, "Missing BPMs"
 
     print("Writing datashape with:", x_data.shape, y_data.shape)
 
-    x_data = x_data * sqrt_betax[:, None]
-    y_data = y_data * sqrt_betay[:, None]
+    # x_data = x_data * sqrt_betax[:, None]
+    # y_data = y_data * sqrt_betay[:, None]
 
     matrices = [
         TransverseData(
@@ -285,7 +280,7 @@ class BPMSDataset(Dataset):
         return orig_data  # * betas[:, None]
 
 
-def load_data(num_workers: int = 4) -> tuple[DataLoader, DataLoader, BPMSDataset]:
+def load_data(num_workers: int = 8) -> tuple[DataLoader, DataLoader, BPMSDataset]:
     dataset = BPMSDataset(
         clean_param_list=CLEAN_PARAM_LIST, num_variations_per_clean=NUM_NOISY_PER_CLEAN
     )
@@ -297,23 +292,21 @@ def load_data(num_workers: int = 4) -> tuple[DataLoader, DataLoader, BPMSDataset
     # Optimize DataLoader settings for better performance
     train_loader = DataLoader(
         train_dataset,
-        batch_size=BATCH_SIZE,
+        batch_size=BATCH_SIZE,  # or try 8 or 16
         shuffle=True,
-        num_workers=num_workers,
-        persistent_workers=True if num_workers > 0 else False,
-        pin_memory=True,  # Faster GPU transfer
-        prefetch_factor=4,  # Increased prefetch for better overlap
-        drop_last=True,  # Avoid smaller final batch
+        num_workers=num_workers,  # try 6, 8, 12
+        pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=4,  # default=2, bump to 4
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=BATCH_SIZE,
         shuffle=False,
-        num_workers=num_workers,
-        persistent_workers=True if num_workers > 0 else False,
-        pin_memory=True,  # Faster GPU transfer
-        prefetch_factor=2,  # Less prefetch needed for validation
-        drop_last=False,  # Keep all validation data
+        num_workers=max(1, num_workers // 2),
+        pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=2,  # val doesn’t need as deep a queue
     )
     return train_loader, val_loader, dataset
 
@@ -338,17 +331,3 @@ def denormalise_sample_dict(
             sample[f"recon_{plane}"], plane=plane, norm_info=norm_info
         )
     return sample_dict
-
-
-def save_global_norm_params(dataset, filepath="global_norm_params.json"):
-    """
-    Store global mean/std for x and y as JSON so we can reload in inference.
-    """
-    norm_params = {
-        "mean_x": dataset.mean_x.mean(dim=0).item(),
-        "std_x": dataset.std_x.mean(dim=0).item(),
-        "mean_y": dataset.mean_y.mean(dim=0).item(),
-        "std_y": dataset.std_y.mean(dim=0).item(),
-    }
-    with open(filepath, "w") as f:
-        json.dump(norm_params, f, indent=2)

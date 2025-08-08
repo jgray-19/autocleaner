@@ -1,14 +1,15 @@
-import json
 import os
+
+import json
 from datetime import datetime
 
 from generic_parser.tools import DotDict
 
 # General Settings
-NUM_NOISY_PER_CLEAN = 10
+NUM_NOISY_PER_CLEAN = 5
 LOAD_MODEL = False
 RESUME_FROM_CKPT = True
-NUM_EPOCHS = 2000
+NUM_EPOCHS = 3000
 
 if RESUME_FROM_CKPT:
     # CONFIG_NAME = "2025-07-04_17-52-43" # 1000 mseloss
@@ -89,11 +90,11 @@ for beam in BEAMS:
                 )
 NUM_PARAMS = len(CLEAN_PARAM_LIST)
 
-BATCH_SIZE = 4
+BATCH_SIZE = 8
 # ACCUMULATE_BATCHES = (
 #     NUM_PARAMS * NUM_NOISY_PER_CLEAN // (BATCH_SIZE * 5)
 # )  # 5 so I get 5 steps per epoch
-ACCUMULATE_BATCHES = 40
+ACCUMULATE_BATCHES = 6
 TRAIN_RATIO = 0.8
 
 MODEL_SAVE_PATH = "conv_autoencoder.pth"

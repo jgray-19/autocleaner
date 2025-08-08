@@ -1,7 +1,7 @@
 import shutil
 import tfs
 import turn_by_turn as tbt
-from config import NONOISE_INDEX, NTURNS, SAMPLE_INDEX, HARPY_CLEAN_INDEX
+from config import NONOISE_INDEX, TOTAL_TURNS, SAMPLE_INDEX, HARPY_CLEAN_INDEX
 from lhcng.config import (
     PLOT_DIR,
     ANALYSIS_DIR,
@@ -21,7 +21,7 @@ def format_noise(noise):
 
 
 def rdt_plots_dir(noise):
-    d = PLOT_DIR / f"{noise:1.1e}_{NTURNS}t_rdt"
+    d = PLOT_DIR / f"{noise:1.1e}_{TOTAL_TURNS}t_rdt"
     d.mkdir(exist_ok=True)
     return d
 
@@ -30,7 +30,7 @@ def run_harpy_analysis(
     beam, coupling_knob, tunes, kick_amp, index, rdts, clean=False, turn_bits=16
 ):
     """Run Harpy and return both the RDT dataframes and the frequency/amplitude data."""
-    tbt_file = get_tbt_path(beam, NTURNS, coupling_knob, kick_amp, tunes, index=index)
+    tbt_file = get_tbt_path(beam, TOTAL_TURNS, coupling_knob, kick_amp, tunes, index=index)
     model_dir = get_model_dir(beam, coupling_knob, tunes)
 
     print(f"Running Harpy for {tbt_file} (clean={clean})")
@@ -64,7 +64,7 @@ def process_tbt_data(beam, coupling_knob, tunes, kick_amp, noise):
 
     tbt_path_nonoise = get_tbt_path(
         beam=beam,
-        nturns=NTURNS,
+        nturns=TOTAL_TURNS,
         coupling_knob=coupling_knob,
         tunes=tunes,
         kick_amp=kick_amp,
@@ -78,7 +78,7 @@ def process_tbt_data(beam, coupling_knob, tunes, kick_amp, noise):
 
     tbt_path_noisy = get_tbt_path(
         beam=beam,
-        nturns=NTURNS,
+        nturns=TOTAL_TURNS,
         coupling_knob=coupling_knob,
         tunes=tunes,
         kick_amp=kick_amp,
@@ -92,7 +92,7 @@ def process_tbt_data(beam, coupling_knob, tunes, kick_amp, noise):
     # Now get the clean path (by copying the noisy)
     tbt_path_clean = get_tbt_path(
         beam=beam,
-        nturns=NTURNS,
+        nturns=TOTAL_TURNS,
         coupling_knob=coupling_knob,
         tunes=tunes,
         kick_amp=kick_amp,
