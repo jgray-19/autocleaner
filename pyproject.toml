@@ -1,0 +1,19 @@
+[project]
+name = "autocleaner"
+version = "0.1.0"
+description = "Utilities for LHC turn-by-turn denoising experiments."
+requires-python = ">=3.10"
+dependencies = [
+    "matplotlib",
+    "omc3",
+    "pytorch-lightning",
+    "tensorboard",
+    "xtrack-tools @ git+https://github.com/jgray-19/xtrack_tools.git",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv]
+package = false
