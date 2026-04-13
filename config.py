@@ -2,14 +2,15 @@ import json
 import os
 from datetime import datetime
 from math import floor
-from lhcng.model import get_model_dir
 from generic_parser.tools import DotDict
+
+from project_paths import get_model_dir
 
 # General Settings
 BEAM = 1
 NUM_FILES = 200
 LOAD_MODEL = False
-RESUME_FROM_CKPT = True
+RESUME_FROM_CKPT = False
 if RESUME_FROM_CKPT:
     # CONFIG_NAME = "2025-03-12_10-35-48" # First Long training with ideal
     # CONFIG_NAME = "2025-03-13_09-39-18" # Added mse to the loss (comb_ssp instead of ssp)
@@ -21,9 +22,9 @@ if RESUME_FROM_CKPT:
     # CONFIG_NAME = "2025-03-18_17-07-40" # Above but now doing many noises on updated thing
     # CONFIG_NAME = "2025-03-19_22-46-55" # Above but tenth the initial learning rate. Also split x and y.
     # CONFIG_NAME = "2025-03-20_09-13-50" # Above but half same noise and 8 base channels
-    
+
     # CONFIG_NAME = '2025-03-20_15-37-57' # See config
-    # CONFIG_NAME = '2025-03-20_15-40-29' # Above but residuals 
+    # CONFIG_NAME = '2025-03-20_15-40-29' # Above but residuals
     # CONFIG_NAME = '2025-03-20_20-56-06' # 24 base channels, 5 batch size and lower learning rate
 
     CONFIG_NAME = '2025-03-21_09-20-38'
@@ -33,7 +34,7 @@ else:
 # Data Settings
 NBPMS = 563
 TOTAL_TURNS = 3000  # Total turns in the simulated data file
-NTURNS = 1500  # Training window length
+NTURNS = 1000  # Training window length
 
 BATCH_SIZE = 4
 ACCUMULATE_BATCHES = 10
@@ -53,7 +54,7 @@ PRECISION = "16-mixed"
 
 NUM_EPOCHS = 5000
 BOTTLENECK_SIZE = 4
-BASE_CHANNELS = 12
+BASE_CHANNELS = 10
 
 LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-5
