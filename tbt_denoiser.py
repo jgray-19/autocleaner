@@ -6,7 +6,7 @@ import torch
 from turn_by_turn.lhc import read_tbt
 
 from config import BEAM, DENOISED_INDEX, NBPMS, NTURNS, RESIDUALS, get_model_dir
-from dataloader import load_clean_data, write_data
+from dataloader import get_twiss_path, load_clean_data, write_data
 from pl_module import get_model
 
 
@@ -22,7 +22,7 @@ def denoise_tbt(autoencoder_path: str, noisy_tbt_path: str) -> Path:
         str: The file path of the cleaned turn-by-turn file.
     """
     # Load beta functions from the twiss file (same as in load_clean_data)
-    model_dat = tfs.read(get_model_dir(BEAM) / "twiss.dat")
+    model_dat = tfs.read(get_twiss_path(get_model_dir(BEAM)))
     sqrt_betax = np.sqrt(model_dat["BETX"].values)
     sqrt_betay = np.sqrt(model_dat["BETY"].values)
 

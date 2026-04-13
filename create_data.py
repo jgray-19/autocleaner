@@ -8,11 +8,11 @@ import turn_by_turn as tbt
 from turn_by_turn import convert_to_tbt
 from xtrack_tools import create_xsuite_environment, line_to_dataframes, run_tracking_without_ac_dipole
 
-from config import NONOISE_INDEX
+from config import BEAM, NONOISE_INDEX, TOTAL_TURNS
 from project_paths import DEFAULT_TUNES, get_model_dir, get_tbt_path, get_tfs_path
 
-BEAM = 1
-NTURNS = 1000
+NTURNS = TOTAL_TURNS
+# Reuse the smaller kick that already produced the working 1000-turn clean file.
 ACTION = 4e-7
 ANGLE = 0.0
 TUNES = DEFAULT_TUNES

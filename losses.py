@@ -177,8 +177,8 @@ class SSPLoss(nn.Module):
 
         # Compute L2 norm differences per sample.
         diff = p_fft - t_fft
-        diff_l2 = torch.norm(diff, dim=(1, 2))
-        p_l2 = torch.norm(p_fft, dim=(1, 2))
-        t_l2 = torch.norm(t_fft, dim=(1, 2))
+        diff_l2 = torch.sqrt(torch.sum(torch.abs(diff) ** 2, dim=(1, 2)))
+        p_l2 = torch.sqrt(torch.sum(torch.abs(p_fft) ** 2, dim=(1, 2)))
+        t_l2 = torch.sqrt(torch.sum(torch.abs(t_fft) ** 2, dim=(1, 2)))
         ssp = diff_l2 / (p_l2 + t_l2 + self.eps)
         return ssp.mean()

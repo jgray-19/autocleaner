@@ -2,9 +2,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import turn_by_turn as tbt
-from torchviz import make_dot
 
-from config import CONFIG_NAME, NBPMS, NTURNS, NUM_CHANNELS, PLOT_DIR
+try:
+    from torchviz import make_dot
+except ImportError:
+    make_dot = None
+
+from lhcng.config import PLOT_DIR
+
+from config import CONFIG_NAME, NBPMS, NTURNS, NUM_CHANNELS
 from fft_processing import calculate_fft_and_amps
 
 COLOURS = [
@@ -290,6 +296,11 @@ def plot_model_architecture(
     Returns:
         None (it saves a PNG file of the model graph to your working directory).
     """
+    if make_dot is None:
+        raise ImportError(
+            "plot_model_architecture requires the optional 'torchviz' dependency."
+        )
+
     # Create a dummy input tensor with batch size = 1
     dummy_input = torch.randn(1, *input_size)
 

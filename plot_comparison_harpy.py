@@ -1,6 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from config import PLOT_DIR
+from lhcng.config import PLOT_DIR
 from tbt_denoiser import denoise_tbt
 from analysis import run_harpy_analysis, process_tbt_data, format_noise
 
