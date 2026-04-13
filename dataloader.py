@@ -15,6 +15,7 @@ from config import (
     BATCH_SIZE,
     BEAM,
     NBPMS,
+    NONOISE_INDEX,
     NOISE_FACTORS,
     NTURNS,
     NUM_FILES,
@@ -28,7 +29,7 @@ from config import (
 
 def load_clean_data() -> tuple[torch.Tensor, torch.Tensor]:
     # Load zero-noise data
-    sdds_data_path = get_tbt_path(beam=BEAM, nturns=TOTAL_TURNS, index=-1)
+    sdds_data_path = get_tbt_path(beam=BEAM, nturns=TOTAL_TURNS, index=NONOISE_INDEX)
     sdds_data = read_tbt(sdds_data_path)
 
     # Read twiss file for beta functions

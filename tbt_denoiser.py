@@ -5,7 +5,7 @@ import tfs
 import torch
 from turn_by_turn.lhc import read_tbt
 
-from config import BEAM, DENOISED_INDEX, NBPMS, NTURNS, get_model_dir
+from config import BEAM, DENOISED_INDEX, NBPMS, NTURNS, RESIDUALS, get_model_dir
 from dataloader import load_clean_data, write_data
 from pl_module import get_model
 
@@ -59,8 +59,12 @@ def denoise_tbt(autoencoder_path: str, noisy_tbt_path: str) -> Path:
 
     # --- Run the autoencoder ---
     with torch.no_grad():
-        recon_x = model(noisy_norm_x)
-        recon_y = model(noisy_norm_y)
+        if RESIDUALS:
+            recon_x = noisy_norm_x - model(noisy_norm_x)
+            recon_y = noisy_norm_y - model(noisy_norm_y)
+        else:
+            recon_x = model(noisy_norm_x)
+            recon_y = model(noisy_norm_y)
     
     # -- Remove the batch dimension --
     recon_x = recon_x.squeeze(0).squeeze(0).detach().cpu().numpy()

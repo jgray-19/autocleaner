@@ -35,8 +35,11 @@ from visualisation import (
 
 assert __name__ == "__main__", "This script is not meant to be imported."
 print_config()
-free, available = torch.cuda.mem_get_info()
-print("Current GPU use:", (available - free) / 1e9, "GB")
+if torch.cuda.is_available():
+    free, available = torch.cuda.mem_get_info()
+    print("Current GPU use:", (available - free) / 1e9, "GB")
+else:
+    print("CUDA not available. Running on CPU.")
 
 # Set up reproducibility
 torch.manual_seed(42)
@@ -108,9 +111,11 @@ print("Denoising validation data...")
 b4_denoise = time.time()
 
 batch = next(iter(val_loader))
-noisy_batch_x = batch["noisy_x"]  # shape: (B, 1, NBPMS, NTURNS)
-noisy_batch_y = batch["noisy_y"]  # shape: (B, 1, NBPMS, NTURNS)
+inference_device = next(model.parameters()).device
+noisy_batch_x = batch["noisy_x"].to(inference_device)  # shape: (B, 1, NBPMS, NTURNS)
+noisy_batch_y = batch["noisy_y"].to(inference_device)  # shape: (B, 1, NBPMS, NTURNS)
 
+model.eval()
 with torch.no_grad():
     if RESIDUALS:
         recon_x = noisy_batch_x - model(noisy_batch_x)
@@ -121,12 +126,12 @@ with torch.no_grad():
 
 assert recon_x.size(0) == noisy_batch_x.size(0) == noisy_batch_y.size(0) == recon_y.size(0)
 sample = {
-    "noisy_x": noisy_batch_x[0, 0, ...].numpy(),
-    "noisy_y": noisy_batch_y[0, 0, ...].numpy(),
-    "recon_x": recon_x[0, 0, ...].numpy(),
-    "recon_y": recon_y[0, 0, ...].numpy(),
-    "clean_x": batch["clean_x"][0, 0, ...].numpy(),
-    "clean_y": batch["clean_y"][0, 0, ...].numpy(),
+    "noisy_x": noisy_batch_x[0, 0, ...].cpu().numpy(),
+    "noisy_y": noisy_batch_y[0, 0, ...].cpu().numpy(),
+    "recon_x": recon_x[0, 0, ...].cpu().numpy(),
+    "recon_y": recon_y[0, 0, ...].cpu().numpy(),
+    "clean_x": batch["clean_x"][0, 0, ...].cpu().numpy(),
+    "clean_y": batch["clean_y"][0, 0, ...].cpu().numpy(),
 }
 
 sample_dict = build_sample_dict(sample, dataset)
