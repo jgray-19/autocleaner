@@ -3,7 +3,7 @@ from pathlib import Path
 
 import tfs
 import turn_by_turn as tbt
-from config import BEAM, NONOISE_INDEX, NTURNS
+from config import BEAM, HARPY_INPUT, NONOISE_INDEX, NTURNS
 from dataloader import parse_tbt_path_metadata
 from lhcng.config import (
     PLOT_DIR,
@@ -11,7 +11,7 @@ from lhcng.config import (
     FREQ_OUT_DIR,
 )
 from lhcng.analysis import get_rdts_from_optics_analysis, run_harpy
-from project_paths import DATA_DIR
+from project_paths import DATA_DIR, get_model_dir
 
 def format_noise(noise):
     if noise >= 1e-3:
@@ -28,10 +28,56 @@ def rdt_plots_dir(noise):
     return d
 
 
+def _run_harpy_compat(tbt_file: Path, clean: bool, turn_bits: int) -> None:
+    metadata = parse_tbt_path_metadata(tbt_file)
+    model_dir = get_model_dir(
+        beam=metadata["beam"],
+        coupling_knob=metadata["coupling_knob"],
+        tunes=metadata["tunes"],
+    )
+
+    compatibility_calls = [
+        lambda: run_harpy(beam=BEAM, tbt_file=tbt_file, clean=clean, turn_bits=turn_bits),
+        lambda: run_harpy(BEAM, tbt_file, clean=clean, turn_bits=turn_bits),
+        lambda: run_harpy(tbt_file, beam=BEAM, clean=clean, turn_bits=turn_bits),
+        lambda: run_harpy(
+            tbt_file,
+            beam=BEAM,
+            model_dir=model_dir,
+            tunes=HARPY_INPUT.tunes,
+            natdeltas=HARPY_INPUT.natdeltas,
+            clean=clean,
+            turn_bits=turn_bits,
+        ),
+        lambda: run_harpy(
+            beam=BEAM,
+            tbt_path=tbt_file,
+            model_dir=model_dir,
+            tunes=HARPY_INPUT.tunes,
+            natdeltas=HARPY_INPUT.natdeltas,
+            clean=clean,
+            turn_bits=turn_bits,
+        ),
+    ]
+
+    last_error = None
+    for call in compatibility_calls:
+        try:
+            call()
+            return
+        except TypeError as error:
+            last_error = error
+
+    raise TypeError(
+        f"Could not find a compatible run_harpy signature for {tbt_file}. "
+        f"Last error: {last_error}"
+    )
+
+
 def run_harpy_analysis(tbt_file, rdts, clean=False, turn_bits=16):
     """Run Harpy and return both the RDT dataframes and the frequency/amplitude data."""
     print(f"Running Harpy for {tbt_file} (clean={clean})")
-    run_harpy(beam=BEAM, tbt_file=tbt_file, clean=clean, turn_bits=turn_bits)
+    _run_harpy_compat(tbt_file=tbt_file, clean=clean, turn_bits=turn_bits)
     analysis_folder = ANALYSIS_DIR / tbt_file.stem
     analysis_folder.mkdir(exist_ok=True)
 
