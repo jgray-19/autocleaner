@@ -7,14 +7,18 @@ from pathlib import Path
 import tfs
 import turn_by_turn as tbt
 from turn_by_turn import convert_to_tbt
-from xtrack_tools import create_xsuite_environment, line_to_dataframes, run_tracking_without_ac_dipole
+from xtrack_tools import (
+    create_xsuite_environment,
+    line_to_dataframes,
+    run_tracking_without_ac_dipole,
+)
 
 from config import BEAM, NONOISE_INDEX, TOTAL_TURNS
 from project_paths import DEFAULT_TUNES, get_model_dir, get_tbt_path, get_tfs_path
 
 NTURNS = TOTAL_TURNS
 # Reuse the smaller kick that already produced the working 1000-turn clean file.
-ACTION = 4e-7
+ACTION = 4e-8
 TUNES = DEFAULT_TUNES
 
 TURN_ANGLES = {
