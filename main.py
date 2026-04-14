@@ -82,12 +82,20 @@ def main() -> None:
             ckpt_path = Path(find_newest_file(ckpt_fldr))
         else:
             ckpt_path = None
-        trainer.fit(lit_model, train_loader, val_loader, ckpt_path=ckpt_path)
+        interrupted = False
+        try:
+            trainer.fit(lit_model, train_loader, val_loader, ckpt_path=ckpt_path)
+        except KeyboardInterrupt:
+            interrupted = True
+            print("Training interrupted. Saving current model weights...")
+            torch.save(model.state_dict(), MODEL_SAVE_PATH)
+            print(f"Interrupted model saved to {MODEL_SAVE_PATH}.")
         print(f"Training took {time.time() - b4_train:.2f} seconds.")
 
-        b4_save = time.time()
-        torch.save(model.state_dict(), MODEL_SAVE_PATH)
-        print(f"Model saved. Took {time.time() - b4_save:.2f} seconds.")
+        if not interrupted:
+            b4_save = time.time()
+            torch.save(model.state_dict(), MODEL_SAVE_PATH)
+            print(f"Model saved. Took {time.time() - b4_save:.2f} seconds.")
 
     print("Denoising validation data...")
     b4_denoise = time.time()

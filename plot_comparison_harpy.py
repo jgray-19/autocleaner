@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -37,6 +38,7 @@ plot_dir.mkdir(exist_ok=True, parents=True)
 
 rdts_to_plot = ["f3000_x", "f1011_y"]
 
+
 def _extract_series(rdt_df, rdt_str, value_key):
     values = np.asarray(rdt_df[rdt_str][value_key])
     if value_key == "AMP":
@@ -55,8 +57,22 @@ def _mean_relative_error(values, baseline):
     return np.abs(rel_err).mean()
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Compare Harpy outputs for noisy, zero-noise, and denoised TBT data."
+    )
+    parser.add_argument(
+        "model_path",
+        nargs="?",
+        default=MODEL_SAVE_PATH,
+        help="Path to model weights or a Lightning checkpoint (.pth or .ckpt).",
+    )
+    return parser.parse_args()
+
+
 def main():
-    model_path = Path(MODEL_SAVE_PATH)
+    args = parse_args()
+    model_path = Path(args.model_path)
     if not model_path.exists():
         raise FileNotFoundError(
             f"Could not find trained autoencoder weights at {model_path.resolve()}."

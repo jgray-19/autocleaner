@@ -28,6 +28,29 @@ def _get_matching_clean_path(noisy_tbt_path: Path) -> Path:
     return clean_tbt_path
 
 
+def _resolve_model_state_dict(checkpoint_data: dict) -> dict:
+    state_dict = checkpoint_data.get("state_dict", checkpoint_data)
+    if not isinstance(state_dict, dict):
+        raise TypeError("Checkpoint did not contain a valid state dict.")
+
+    if any(key.startswith("model.") for key in state_dict):
+        return {
+            key.removeprefix("model."): value
+            for key, value in state_dict.items()
+            if key.startswith("model.")
+        }
+    return state_dict
+
+
+def load_denoiser_model(weights_path: str | Path) -> torch.nn.Module:
+    model = get_model()
+    checkpoint_data = torch.load(weights_path, map_location=torch.device("cpu"))
+    state_dict = _resolve_model_state_dict(checkpoint_data)
+    model.load_state_dict(state_dict)
+    model.eval()
+    return model
+
+
 def denoise_tbt(autoencoder_path: str, noisy_tbt_path: str) -> Path:
     """
     Denoise a turn-by-turn file using a saved autoencoder.
@@ -81,11 +104,7 @@ def denoise_tbt(autoencoder_path: str, noisy_tbt_path: str) -> Path:
     noisy_norm_y = torch.tensor(norm_y, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
 
     # --- Load the autoencoder model ---
-    model = get_model()
-
-    state_dict = torch.load(autoencoder_path, map_location=torch.device("cpu"))
-    model.load_state_dict(state_dict)
-    model.eval()
+    model = load_denoiser_model(autoencoder_path)
 
     # --- Run the autoencoder ---
     with torch.no_grad():
