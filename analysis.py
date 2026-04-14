@@ -28,63 +28,37 @@ def rdt_plots_dir(noise):
     return d
 
 
-def _run_harpy_compat(tbt_file: Path, clean: bool, turn_bits: int) -> None:
+def _get_model_dir_for_tbt(tbt_file: Path) -> Path:
     metadata = parse_tbt_path_metadata(tbt_file)
-    model_dir = get_model_dir(
+    return get_model_dir(
         beam=metadata["beam"],
         coupling_knob=metadata["coupling_knob"],
         tunes=metadata["tunes"],
     )
 
-    compatibility_calls = [
-        lambda: run_harpy(beam=BEAM, tbt_file=tbt_file, clean=clean, turn_bits=turn_bits),
-        lambda: run_harpy(BEAM, tbt_file, clean=clean, turn_bits=turn_bits),
-        lambda: run_harpy(tbt_file, beam=BEAM, clean=clean, turn_bits=turn_bits),
-        lambda: run_harpy(
-            tbt_file,
-            beam=BEAM,
-            model_dir=model_dir,
-            tunes=HARPY_INPUT.tunes,
-            natdeltas=HARPY_INPUT.natdeltas,
-            clean=clean,
-            turn_bits=turn_bits,
-        ),
-        lambda: run_harpy(
-            beam=BEAM,
-            tbt_path=tbt_file,
-            model_dir=model_dir,
-            tunes=HARPY_INPUT.tunes,
-            natdeltas=HARPY_INPUT.natdeltas,
-            clean=clean,
-            turn_bits=turn_bits,
-        ),
-    ]
-
-    last_error = None
-    for call in compatibility_calls:
-        try:
-            call()
-            return
-        except TypeError as error:
-            last_error = error
-
-    raise TypeError(
-        f"Could not find a compatible run_harpy signature for {tbt_file}. "
-        f"Last error: {last_error}"
-    )
-
-
 def run_harpy_analysis(tbt_file, rdts, clean=False, turn_bits=16):
     """Run Harpy and return both the RDT dataframes and the frequency/amplitude data."""
     print(f"Running Harpy for {tbt_file} (clean={clean})")
-    _run_harpy_compat(tbt_file=tbt_file, clean=clean, turn_bits=turn_bits)
+    model_dir = _get_model_dir_for_tbt(tbt_file)
+    run_harpy(
+        beam=BEAM,
+        tbt_path=tbt_file,
+        model_dir=model_dir,
+        tunes=HARPY_INPUT.tunes,
+        natdeltas=HARPY_INPUT.natdeltas,
+        linfile_dir=FREQ_OUT_DIR,
+        clean=clean,
+    )
     analysis_folder = ANALYSIS_DIR / tbt_file.stem
     analysis_folder.mkdir(exist_ok=True)
 
-    rdts_df = get_rdts_from_optics_analysis(
+    rdts_df_all = get_rdts_from_optics_analysis(
         beam=BEAM,
         tbt_path=FREQ_OUT_DIR / tbt_file.name,
+        model_dir=model_dir,
+        output_dir=analysis_folder,
     )
+    rdts_df = {rdt: rdts_df_all[rdt] for rdt in rdts if rdt in rdts_df_all}
     # Load frequency/amplitude data for both X and Y planes
     freqx = tfs.read(FREQ_OUT_DIR / f"{tbt_file.name}.freqsx")
     ampsx = tfs.read(FREQ_OUT_DIR / f"{tbt_file.name}.ampsx")
