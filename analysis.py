@@ -42,7 +42,7 @@ def run_harpy_analysis(tbt_file, rdts, clean=False, turn_bits=16):
     model_dir = _get_model_dir_for_tbt(tbt_file)
     run_harpy(
         beam=BEAM,
-        tbt_path=tbt_file,
+        tbt_files=tbt_file,
         model_dir=model_dir,
         tunes=HARPY_INPUT.tunes,
         natdeltas=HARPY_INPUT.natdeltas,

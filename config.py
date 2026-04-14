@@ -10,7 +10,7 @@ from project_paths import get_model_dir
 BEAM = 1
 NUM_FILES = 200
 LOAD_MODEL = False
-RESUME_FROM_CKPT = False
+RESUME_FROM_CKPT = True
 if RESUME_FROM_CKPT:
     # CONFIG_NAME = "2025-03-12_10-35-48" # First Long training with ideal
     # CONFIG_NAME = "2025-03-13_09-39-18" # Added mse to the loss (comb_ssp instead of ssp)
@@ -27,7 +27,9 @@ if RESUME_FROM_CKPT:
     # CONFIG_NAME = '2025-03-20_15-40-29' # Above but residuals
     # CONFIG_NAME = '2025-03-20_20-56-06' # 24 base channels, 5 batch size and lower learning rate
 
-    CONFIG_NAME = '2025-03-21_09-20-38'
+    # CONFIG_NAME = '2025-03-21_09-20-38'
+
+    CONFIG_NAME = '2026-04-14_08-34-32'
 else:
     CONFIG_NAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 

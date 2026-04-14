@@ -32,7 +32,7 @@ rdts = [  # Normal Sextupole
     "f1020_y",
 ]
 
-noise_levels = [1e-4, 2.5e-4, 5e-4, 1e-3]
+noise_levels = [1e-4, 2.5e-4]#, 5e-4, 1e-3]
 plot_dir = PLOT_DIR / "harpy"
 plot_dir.mkdir(exist_ok=True, parents=True)
 
@@ -40,13 +40,23 @@ rdts_to_plot = ["f3000_x", "f1011_y"]
 
 
 def _extract_series(rdt_df, rdt_str, value_key):
-    values = np.asarray(rdt_df[rdt_str][value_key])
+    values = rdt_df[rdt_str][value_key].copy()
     if value_key == "AMP":
-        values = np.abs(values)
+        values = values.abs()
     return values
 
 
+def _align_on_common_names(*series_objects):
+    common_names = series_objects[0].index
+    for series in series_objects[1:]:
+        common_names = common_names.intersection(series.index)
+
+    return tuple(series.loc[common_names] for series in series_objects)
+
+
 def _mean_relative_error(values, baseline):
+    values = np.asarray(values)
+    baseline = np.asarray(baseline)
     with np.errstate(divide="ignore", invalid="ignore"):
         rel_err = np.divide(
             values - baseline,
@@ -103,13 +113,29 @@ def main():
                 noisy_values = _extract_series(rdt_dfs[noise]["noisy"], rdt_str, amp_or_phase)
                 zero_values = _extract_series(rdt_dfs[noise]["zero"], rdt_str, amp_or_phase)
                 auto_values = _extract_series(rdt_dfs[noise]["auto"], rdt_str, amp_or_phase)
+                noisy_s = rdt_dfs[noise]["noisy"][rdt_str]["S"]
+                zero_s = rdt_dfs[noise]["zero"][rdt_str]["S"]
+                auto_s = rdt_dfs[noise]["auto"][rdt_str]["S"]
+
+                noisy_values, zero_values, noisy_s, zero_s = _align_on_common_names(
+                    noisy_values,
+                    zero_values,
+                    noisy_s,
+                    zero_s,
+                )
+                auto_values, zero_values_auto, auto_s, zero_s_auto = _align_on_common_names(
+                    auto_values,
+                    zero_values,
+                    auto_s,
+                    zero_s,
+                )
 
                 noisy_err = _mean_relative_error(noisy_values, zero_values)
-                auto_err = _mean_relative_error(auto_values, zero_values)
+                auto_err = _mean_relative_error(auto_values, zero_values_auto)
 
                 data_dict = {
                     "Noisy": {
-                        "x_data": rdt_dfs[noise]["noisy"][rdt_str]["S"],
+                        "x_data": noisy_s,
                         "y_data": noisy_values,
                         "color": COLOURS[0],
                         "linestyle": "dashed",
@@ -117,14 +143,14 @@ def main():
                         "avg_err": noisy_err,
                     },
                     "Zero Noise": {
-                        "x_data": rdt_dfs[noise]["zero"][rdt_str]["S"],
+                        "x_data": zero_s,
                         "y_data": zero_values,
                         "color": COLOURS[1],
                         "linestyle": "solid",
                         "alpha": 1.0,
                     },
                     "Autoencoder Denoised": {
-                        "x_data": rdt_dfs[noise]["auto"][rdt_str]["S"],
+                        "x_data": auto_s,
                         "y_data": auto_values,
                         "color": COLOURS[6],
                         "linestyle": "dotted",
