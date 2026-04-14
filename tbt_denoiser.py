@@ -5,9 +5,27 @@ import tfs
 import torch
 from turn_by_turn.lhc import read_tbt
 
-from config import BEAM, DENOISED_INDEX, NBPMS, NTURNS, RESIDUALS, get_model_dir
-from dataloader import get_twiss_path, load_clean_data, write_data
+from config import DENOISED_INDEX, NBPMS, NTURNS, NONOISE_INDEX, RESIDUALS, get_model_dir
+from dataloader import get_twiss_path, load_clean_data, parse_tbt_path_metadata, write_data
 from pl_module import get_model
+from project_paths import get_tbt_path
+
+
+def _get_matching_clean_path(noisy_tbt_path: Path) -> Path:
+    metadata = parse_tbt_path_metadata(noisy_tbt_path)
+    clean_tbt_path = get_tbt_path(
+        beam=metadata["beam"],
+        nturns=metadata["nturns"],
+        coupling_knob=metadata["coupling_knob"],
+        tunes=metadata["tunes"],
+        kick_amp=metadata["kick_amp"],
+        index=NONOISE_INDEX,
+    )
+    if not clean_tbt_path.exists():
+        raise FileNotFoundError(
+            f"Could not find matching clean TBT file for {noisy_tbt_path} at {clean_tbt_path}."
+        )
+    return clean_tbt_path
 
 
 def denoise_tbt(autoencoder_path: str, noisy_tbt_path: str) -> Path:
@@ -21,14 +39,25 @@ def denoise_tbt(autoencoder_path: str, noisy_tbt_path: str) -> Path:
     Returns:
         str: The file path of the cleaned turn-by-turn file.
     """
-    # Load beta functions from the twiss file (same as in load_clean_data)
-    model_dat = tfs.read(get_twiss_path(get_model_dir(BEAM)))
+    noisy_tbt_path = Path(noisy_tbt_path)
+    metadata = parse_tbt_path_metadata(noisy_tbt_path)
+
+    # Load beta functions from the corresponding twiss file.
+    model_dat = tfs.read(
+        get_twiss_path(
+            get_model_dir(
+                beam=metadata["beam"],
+                coupling_knob=metadata["coupling_knob"],
+                tunes=metadata["tunes"],
+            )
+        )
+    )
     sqrt_betax = np.sqrt(model_dat["BETX"].values)
     sqrt_betay = np.sqrt(model_dat["BETY"].values)
 
     # --- Load clean data to compute normalization parameters ---
-    # load_clean_data returns a tensor of shape (TOTAL_TURNS, 2*NBPMS) where data are β-scaled.
-    clean_tensor_x, clean_tensor_y = load_clean_data()
+    clean_tbt_path = _get_matching_clean_path(noisy_tbt_path)
+    clean_tensor_x, clean_tensor_y, _, _ = load_clean_data(clean_tbt_path)
     min_x = clean_tensor_x.min().item()
     max_x = clean_tensor_x.max().item()
     min_y = clean_tensor_y.min().item()
@@ -40,7 +69,8 @@ def denoise_tbt(autoencoder_path: str, noisy_tbt_path: str) -> Path:
     x_data = tbt_data.matrices[0].X.to_numpy() / sqrt_betax[:, None]
     y_data = tbt_data.matrices[0].Y.to_numpy() / sqrt_betay[:, None]
 
-    assert x_data.shape == y_data.shape == (NBPMS, NTURNS), "Data shape mismatch"
+    expected_shape = (NBPMS, metadata["nturns"])
+    assert x_data.shape == y_data.shape == expected_shape, "Data shape mismatch"
 
     # --- Normalize noisy data using minmax scaling from the clean file ---
     norm_x = 2 * (x_data - min_x) / (max_x - min_x) - 1
@@ -76,5 +106,10 @@ def denoise_tbt(autoencoder_path: str, noisy_tbt_path: str) -> Path:
     recon_y = (recon_y + 1) / 2 * (max_y - min_y) + min_y
 
     # --- Write the cleaned data ---
-    cleaned_file_path, _ = write_data(recon_x, recon_y, noise_index=DENOISED_INDEX)
+    cleaned_file_path, _ = write_data(
+        recon_x,
+        recon_y,
+        noise_index=DENOISED_INDEX,
+        reference_tbt_path=noisy_tbt_path,
+    )
     return cleaned_file_path

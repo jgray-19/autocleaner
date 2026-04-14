@@ -1,14 +1,17 @@
 import shutil
+from pathlib import Path
+
 import tfs
 import turn_by_turn as tbt
 from config import BEAM, NONOISE_INDEX, NTURNS
+from dataloader import parse_tbt_path_metadata
 from lhcng.config import (
     PLOT_DIR,
     ANALYSIS_DIR,
     FREQ_OUT_DIR,
 )
 from lhcng.analysis import get_rdts_from_optics_analysis, run_harpy
-from lhcng.tracking import get_tbt_path
+from project_paths import DATA_DIR
 
 def format_noise(noise):
     if noise >= 1e-3:
@@ -45,15 +48,32 @@ def run_harpy_analysis(tbt_file, rdts, clean=False, turn_bits=16):
     return rdts_df, freq_amp
 
 
+def _find_clean_tbt_path(nturns: int = NTURNS) -> Path:
+    pattern = f"tbt_b{BEAM}__*_t*_k*_{NONOISE_INDEX}.sdds"
+    matching_paths = []
+    for candidate in sorted(DATA_DIR.glob(pattern)):
+        try:
+            metadata = parse_tbt_path_metadata(candidate)
+        except ValueError:
+            continue
+        if metadata["beam"] == BEAM and metadata["nturns"] == nturns:
+            matching_paths.append(candidate)
+
+    if not matching_paths:
+        raise FileNotFoundError(
+            f"Could not find a clean TBT file for beam {BEAM} with {nturns} turns in {DATA_DIR}."
+        )
+    return matching_paths[0]
+
+
 def process_tbt_data(noise):
-    tbt_path_nonoise = get_tbt_path(beam=BEAM, nturns=NTURNS, index=NONOISE_INDEX)
-    if not tbt_path_nonoise.exists():
-        raise FileNotFoundError(f"Could not find file {tbt_path_nonoise}")
+    tbt_path_nonoise = _find_clean_tbt_path()
 
     if noise == 0.0:
         return tbt_path_nonoise
 
-    tbt_file_noisy = tbt_path_nonoise.name.replace("zero_noise", "noisy")
+    noise_tag = f"{noise:.1e}".replace("+", "")
+    tbt_file_noisy = tbt_path_nonoise.name.replace("zero_noise", f"noisy_{noise_tag}")
     tbt_path_noisy = tbt_path_nonoise.parent / tbt_file_noisy
 
     clean_tbt = tbt.read_tbt(tbt_path_nonoise)
@@ -61,7 +81,7 @@ def process_tbt_data(noise):
     print(f"Written tbt file to {tbt_path_noisy}")
 
     # Now get the clean path (by copying the noisy)
-    tbt_file_clean = tbt_path_nonoise.name.replace("zero_noise", "harpy_cleaned")
+    tbt_file_clean = tbt_path_nonoise.name.replace("zero_noise", f"harpy_cleaned_{noise_tag}")
     tbt_path_clean = tbt_path_nonoise.parent / tbt_file_clean
 
     if tbt_path_clean.exists():

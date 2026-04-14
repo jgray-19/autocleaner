@@ -133,20 +133,45 @@ def load_clean_data(
     )
 
 
-def write_data(x_data: torch.Tensor, y_data: torch.Tensor, noise_index: int = 2) -> tuple[Path, TbtData]:
-    model_dat = tfs.read(get_twiss_path(get_model_dir(beam=BEAM)), index="NAME")
+def write_data(
+    x_data: torch.Tensor,
+    y_data: torch.Tensor,
+    noise_index: int | str = 2,
+    reference_tbt_path: Path | None = None,
+) -> tuple[Path, TbtData]:
+    if reference_tbt_path is None:
+        model_dir = get_model_dir(beam=BEAM)
+        expected_turns = NTURNS
+        out_path = get_tbt_path(beam=BEAM, nturns=NTURNS, index=noise_index)
+    else:
+        metadata = parse_tbt_path_metadata(Path(reference_tbt_path))
+        model_dir = get_model_dir(
+            beam=metadata["beam"],
+            coupling_knob=metadata["coupling_knob"],
+            tunes=metadata["tunes"],
+        )
+        expected_turns = metadata["nturns"]
+        out_path = get_tbt_path(
+            beam=metadata["beam"],
+            nturns=expected_turns,
+            coupling_knob=metadata["coupling_knob"],
+            tunes=metadata["tunes"],
+            kick_amp=metadata["kick_amp"],
+            index=noise_index,
+        )
+
+    model_dat = tfs.read(get_twiss_path(model_dir), index="NAME")
     sqrt_betax = np.sqrt(model_dat["BETX"].values)
     sqrt_betay = np.sqrt(model_dat["BETY"].values)
     x_bpm_names = model_dat.index.to_list()
     y_bpm_names = model_dat.index.to_list()
 
-    assert x_data.shape == (NBPMS, NTURNS), "Data shape mismatch"
-    assert y_data.shape == (NBPMS, NTURNS), "Data shape mismatch"
+    assert x_data.shape == (NBPMS, expected_turns), "Data shape mismatch"
+    assert y_data.shape == (NBPMS, expected_turns), "Data shape mismatch"
     print("Writing datashape with:", x_data.shape, y_data.shape)
 
     x_data = x_data * sqrt_betax[:, None]
     y_data = y_data * sqrt_betay[:, None]
-    out_path = get_tbt_path(beam=BEAM, nturns=NTURNS, index=noise_index)
 
     matrices = [
         TransverseData(
@@ -154,7 +179,7 @@ def write_data(x_data: torch.Tensor, y_data: torch.Tensor, noise_index: int = 2)
             Y=pd.DataFrame(index=y_bpm_names, data=y_data, dtype=float),
         )
     ]
-    out_data = TbtData(matrices=matrices, nturns=NTURNS)
+    out_data = TbtData(matrices=matrices, nturns=expected_turns)
     write_tbt(out_path, out_data)
     return out_path, out_data
 
