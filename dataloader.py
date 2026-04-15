@@ -15,7 +15,6 @@ from turn_by_turn.lhc import read_tbt, write_tbt
 from config import (
     BATCH_SIZE,
     BEAM,
-    NBPMS,
     NONOISE_INDEX,
     NOISE_FACTORS,
     NTURNS,
@@ -51,6 +50,10 @@ def get_twiss_path(model_dir: Path) -> Path:
         if twiss_path.exists():
             return twiss_path
     raise FileNotFoundError(f"Could not find a twiss file in {model_dir}")
+
+
+def _load_twiss_table(model_dir: Path) -> pd.DataFrame:
+    return tfs.read(get_twiss_path(model_dir), index="NAME")
 
 
 def parse_tbt_path_metadata(tbt_path: Path) -> dict:
@@ -111,17 +114,14 @@ def load_clean_data(
         coupling_knob=metadata["coupling_knob"],
         tunes=metadata["tunes"],
     )
-    model_dat = tfs.read(
-        get_twiss_path(model_dir)
-    )
-    sqrt_betax = np.sqrt(model_dat["BETX"].values)  # For X plane
-    sqrt_betay = np.sqrt(model_dat["BETY"].values)  # For Y plane
+    model_dat = _load_twiss_table(model_dir)
+    sqrt_betax = np.sqrt(model_dat["BETX"].to_numpy())
+    sqrt_betay = np.sqrt(model_dat["BETY"].to_numpy())
 
-    # Extract data; assume sdds_data.matrices[0] contains both 'X' and 'Y'
     x_data = sdds_data.matrices[0].X.to_numpy() / sqrt_betax[:, None]
     y_data = sdds_data.matrices[0].Y.to_numpy() / sqrt_betay[:, None]
 
-    expected_shape = (NBPMS, metadata["nturns"])
+    expected_shape = (len(model_dat.index), metadata["nturns"])
     assert x_data.shape == y_data.shape == expected_shape, "Data shape mismatch"
 
     # Return x_data and y_data as separate tensors
@@ -160,14 +160,17 @@ def write_data(
             index=noise_index,
         )
 
-    model_dat = tfs.read(get_twiss_path(model_dir), index="NAME")
-    sqrt_betax = np.sqrt(model_dat["BETX"].values)
-    sqrt_betay = np.sqrt(model_dat["BETY"].values)
+    model_dat = _load_twiss_table(model_dir)
     x_bpm_names = model_dat.index.to_list()
     y_bpm_names = model_dat.index.to_list()
+    sqrt_betax = np.sqrt(model_dat["BETX"].to_numpy())
+    sqrt_betay = np.sqrt(model_dat["BETY"].to_numpy())
 
-    assert x_data.shape == (NBPMS, expected_turns), "Data shape mismatch"
-    assert y_data.shape == (NBPMS, expected_turns), "Data shape mismatch"
+    x_data = np.asarray(x_data, dtype=float)
+    y_data = np.asarray(y_data, dtype=float)
+
+    assert x_data.shape == (len(x_bpm_names), expected_turns), "Data shape mismatch"
+    assert y_data.shape == (len(y_bpm_names), expected_turns), "Data shape mismatch"
     print("Writing datashape with:", x_data.shape, y_data.shape)
 
     x_data = x_data * sqrt_betax[:, None]
@@ -189,11 +192,11 @@ class BPMSDataset(Dataset):
     A compact dataset class that:
       - Assumes min–max normalization.
       - Precomputes the normalized clean data.
-      - Pre-stores a per-sample RNG.
+      - Uses deterministic per-sample specs for source, window offset, and RNG seed.
       - Precomputes a combined noise scaling factor that divides the min–max scale (2/(max-min))
         by the per-BPM beta function, so noise can be injected directly in the normalized space.
     """
-    def __init__(self, clean_paths, num_samples, noise_factors=NOISE_FACTORS, base_seed=SEED):
+    def __init__(self, clean_paths, sample_specs, noise_factors=NOISE_FACTORS):
         super().__init__()
         if not clean_paths:
             raise ValueError("BPMSDataset requires at least one clean TBT file.")
@@ -231,15 +234,11 @@ class BPMSDataset(Dataset):
                 }
             )
 
-        self.num_samples = num_samples
         self.noise_factors = noise_factors
-        self.base_seed = base_seed
-        self.sample_source_indices = [i % len(self.sources) for i in range(num_samples)]
+        self.sample_specs = sample_specs
 
-        # Precompute per-sample offsets using the source-specific turn count.
-        self.offsets = []
-        rng_offsets = np.random.default_rng(base_seed)
-        for i, source_idx in enumerate(self.sample_source_indices):
+        for spec in self.sample_specs:
+            source_idx = spec["source_idx"]
             source_total_turns = self.sources[source_idx]["total_turns"]
             max_start = source_total_turns - NTURNS
             if max_start < 0:
@@ -247,23 +246,20 @@ class BPMSDataset(Dataset):
                     f"Source {self.sources[source_idx]['path']} has only"
                     f" {source_total_turns} turns, which is fewer than NTURNS={NTURNS}."
                 )
-            if USE_OFFSETS and max_start > 0:
-                if i % NUM_SAME_OFFSET == 0:
-                    offset = int(rng_offsets.integers(0, max_start + 1))
-                self.offsets.append(offset)
-            else:
-                self.offsets.append(0)
-
-        # Pre-store an RNG for each sample.
-        self.rngs = [np.random.default_rng(base_seed + i) for i in range(num_samples)]
+            if not 0 <= spec["offset"] <= max_start:
+                raise ValueError(
+                    f"Sample offset {spec['offset']} is outside the valid range"
+                    f" [0, {max_start}] for {self.sources[source_idx]['path']}."
+                )
 
     def __len__(self):
-        return self.num_samples
+        return len(self.sample_specs)
 
     def __getitem__(self, idx):
-        source_idx = self.sample_source_indices[idx]
+        spec = self.sample_specs[idx]
+        source_idx = spec["source_idx"]
         source = self.sources[source_idx]
-        start_idx = self.offsets[idx]
+        start_idx = spec["offset"]
         end_idx = start_idx + NTURNS
 
         # Get the precomputed normalized clean data slice.
@@ -271,11 +267,10 @@ class BPMSDataset(Dataset):
         clean_slice_norm_y = source["norm_clean_y"][:, :, start_idx:end_idx]
 
         # Determine the noise factor deterministically.
-        factor_idx = idx % len(self.noise_factors)
+        factor_idx = spec["noise_factor_idx"]
         noise_factor = self.noise_factors[factor_idx]
 
-        # Retrieve the pre-stored RNG for this sample.
-        rng = self.rngs[idx]
+        rng = np.random.default_rng(spec["rng_seed"])
 
         # Generate raw noise (vectorized) and then scale it:
         # Instead of dividing by beta functions and then multiplying by scale_x,
@@ -314,6 +309,68 @@ class BPMSDataset(Dataset):
         return orig_data * betas[:, None]
 
 
+def _build_sample_specs(clean_paths: list[Path], num_samples: int) -> list[dict]:
+    rng_offsets = np.random.default_rng(SEED)
+    sample_specs = []
+    current_offset = 0
+
+    for i in range(num_samples):
+        source_idx = i % len(clean_paths)
+        metadata = parse_tbt_path_metadata(clean_paths[source_idx])
+        max_start = metadata["nturns"] - NTURNS
+        if max_start < 0:
+            raise ValueError(
+                f"Source {clean_paths[source_idx]} has only {metadata['nturns']} turns,"
+                f" which is fewer than NTURNS={NTURNS}."
+            )
+        if USE_OFFSETS and max_start > 0:
+            if i % NUM_SAME_OFFSET == 0:
+                current_offset = int(rng_offsets.integers(0, max_start + 1))
+            offset = current_offset
+        else:
+            offset = 0
+
+        sample_specs.append(
+            {
+                "source_idx": source_idx,
+                "offset": offset,
+                "noise_factor_idx": i % len(NOISE_FACTORS),
+                "rng_seed": SEED + i,
+            }
+        )
+
+    return sample_specs
+
+
+def _split_sample_specs(
+    sample_specs: list[dict], train_ratio: float
+) -> tuple[list[dict], list[dict]]:
+    grouped_specs = {}
+    for spec in sample_specs:
+        grouped_specs.setdefault(spec["source_idx"], []).append(spec)
+
+    rng = np.random.default_rng(SEED)
+    train_specs = []
+    val_specs = []
+
+    for source_idx in sorted(grouped_specs):
+        source_specs = grouped_specs[source_idx]
+        if len(source_specs) == 1:
+            train_specs.extend(source_specs)
+            continue
+
+        shuffled_indices = rng.permutation(len(source_specs))
+        train_count = int(np.floor(train_ratio * len(source_specs)))
+        train_count = max(1, min(len(source_specs) - 1, train_count))
+
+        train_specs.extend(source_specs[i] for i in shuffled_indices[:train_count])
+        val_specs.extend(source_specs[i] for i in shuffled_indices[train_count:])
+
+    rng.shuffle(train_specs)
+    rng.shuffle(val_specs)
+    return train_specs, val_specs
+
+
 def load_data() -> tuple[DataLoader, DataLoader, BPMSDataset]:
     """Loads the training and validation data."""
     clean_paths = discover_clean_data_paths()
@@ -321,35 +378,23 @@ def load_data() -> tuple[DataLoader, DataLoader, BPMSDataset]:
     for clean_path in clean_paths:
         print(f"  - {clean_path.name}")
 
-    train_num_samples = int(TRAIN_RATIO * NUM_FILES)
-    val_num_samples = NUM_FILES - train_num_samples
-
+    all_sample_specs = _build_sample_specs(clean_paths, max(NUM_FILES, 1))
     if len(clean_paths) == 1:
         print(
-            "Warning: Only one clean source file found; validation will reuse the same"
-            " underlying orbit."
+            "Warning: Only one clean source file found; training and validation will"
+            " split windows from the same underlying orbit."
         )
-        train_paths = clean_paths
-        val_paths = clean_paths
-    else:
-        rng = np.random.default_rng(SEED)
-        shuffled_indices = rng.permutation(len(clean_paths))
-        train_source_count = int(np.floor(TRAIN_RATIO * len(clean_paths)))
-        train_source_count = max(1, min(len(clean_paths) - 1, train_source_count))
-        train_paths = [clean_paths[i] for i in shuffled_indices[:train_source_count]]
-        val_paths = [clean_paths[i] for i in shuffled_indices[train_source_count:]]
+    train_specs, val_specs = _split_sample_specs(all_sample_specs, TRAIN_RATIO)
 
     train_dataset = BPMSDataset(
-        clean_paths=train_paths,
-        num_samples=max(train_num_samples, 1),
+        clean_paths=clean_paths,
+        sample_specs=train_specs,
         noise_factors=NOISE_FACTORS,
-        base_seed=SEED,
     )
     val_dataset = BPMSDataset(
-        clean_paths=val_paths,
-        num_samples=max(val_num_samples, 1),
+        clean_paths=clean_paths,
+        sample_specs=val_specs,
         noise_factors=NOISE_FACTORS,
-        base_seed=SEED + 10_000,
     )
     train_loader = DataLoader(
         train_dataset,
