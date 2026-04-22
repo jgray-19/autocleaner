@@ -1,5 +1,5 @@
-from pathlib import Path
 import re
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -15,8 +15,9 @@ from turn_by_turn.lhc import read_tbt, write_tbt
 from config import (
     BATCH_SIZE,
     BEAM,
-    NONOISE_INDEX,
+    NBPMS,
     NOISE_FACTORS,
+    NONOISE_INDEX,
     NTURNS,
     NUM_FILES,
     NUM_SAME_OFFSET,
@@ -25,7 +26,6 @@ from config import (
     TRAIN_RATIO,
     USE_OFFSETS,
 )
-
 
 TBT_FILENAME_PATTERN = re.compile(
     r"^tbt_b(?P<beam>\d+)__(?:(?:c(?P<coupling>[^_]+))_)?"
@@ -190,10 +190,10 @@ def write_data(
 class BPMSDataset(Dataset):
     """
     A compact dataset class that:
-      - Assumes min–max normalization.
+      - Assumes min-max normalization.
       - Precomputes the normalized clean data.
       - Uses deterministic per-sample specs for source, window offset, and RNG seed.
-      - Precomputes a combined noise scaling factor that divides the min–max scale (2/(max-min))
+      - Precomputes a combined noise scaling factor that divides the min-max scale (2/(max-min))
         by the per-BPM beta function, so noise can be injected directly in the normalized space.
     """
     def __init__(self, clean_paths, sample_specs, noise_factors=NOISE_FACTORS):

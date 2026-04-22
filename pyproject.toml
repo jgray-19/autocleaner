@@ -11,7 +11,7 @@ dependencies = [
     "torch==2.6.0 ; sys_platform == 'darwin'",
     "torch==2.6.0 ; sys_platform == 'linux'",
     "xtrack-tools @ git+https://github.com/jgray-19/xtrack_tools.git",
-    "lhcng @ git+https://github.com/jgray-19/lhcng.git"
+    "lhcng @ git+https://github.com/jgray-19/lhcng.git@a86a880b4dad12b6f14b133687c45b40ced3dba4"
 ]
 
 [tool.uv.sources]
