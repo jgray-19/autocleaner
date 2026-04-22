@@ -1,14 +1,13 @@
 import json
 import os
 from datetime import datetime
-from math import floor
 from generic_parser.tools import DotDict
 
 from project_paths import get_model_dir
 
 # General Settings
 BEAM = 1
-NUM_FILES = 200
+NUM_FILES = 500
 LOAD_MODEL = False
 RESUME_FROM_CKPT = True
 if RESUME_FROM_CKPT:
@@ -29,17 +28,23 @@ if RESUME_FROM_CKPT:
 
     # CONFIG_NAME = '2025-03-21_09-20-38'
 
-    CONFIG_NAME = '2026-04-14_08-34-32'
+    # CONFIG_NAME = '2026-04-14_08-34-32' # Single tune set
+
+    # CONFIG_NAME = '2026-04-17_14-18-36' # Two tunes, the training window is split among number of windows not files. aa
+
+    CONFIG_NAME = "2026-04-19_17-52-29" # Higher LR, less noisy, slightly larger model, schedular off, alpha=0.01
+
+    # CONFIG_NAME = "2026-04-21_12-42-43"
 else:
     CONFIG_NAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 # Data Settings
-NBPMS = 563
-TOTAL_TURNS = 3000  # Total turns in the simulated data file
+NBPMS = 559
+TOTAL_TURNS = 6600  # Total turns in the simulated data file
 NTURNS = 1000  # Training window length
 
-BATCH_SIZE = 4
-ACCUMULATE_BATCHES = 10
+BATCH_SIZE = 25
+ACCUMULATE_BATCHES = 2
 TRAIN_RATIO = 0.8
 
 NUM_SAME_NOISE = 1
@@ -48,29 +53,28 @@ NUM_SAME_OFFSET = 1
 MODEL_SAVE_PATH = "conv_autoencoder.pth"
 MODEL_DIR = get_model_dir(beam=BEAM)
 
-NLOGSTEPS = max(floor(TRAIN_RATIO * NUM_FILES / BATCH_SIZE), 1)
+NLOGSTEPS = 2
 
 # NUM_PLANES = 2
 NUM_CHANNELS = 1
 PRECISION = "16-mixed"
 
-NUM_EPOCHS = 5000
+NUM_EPOCHS = 10_000
 BOTTLENECK_SIZE = 4
-BASE_CHANNELS = 10
+BASE_CHANNELS = 5
 
 LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-5
 
-ALPHA = 0.5
+ALPHA = 0.01
 
 DENOISED_INDEX = "denoised"
 SAMPLE_INDEX = "noisy"
 NONOISE_INDEX = "zero_noise"
 
 # NOISE_FACTORS = [1e-3, 9e-4, 8e-4, 7e-4, 6e-4, 5e-4, 4e-4, 3e-4, 2e-4, 1e-4, 5e-5]
-NOISE_FACTORS = [1e-3, 5e-4, 1e-4, 5e-5]
+NOISE_FACTORS = [5e-4, 1e-4, 3e-5, 1e-5, 3e-6, 1e-6, 3e-7]
 # NOISE_FACTORS = [5e-4, 1e-4]
-
 
 # MODEL_TYPE = "leaky"
 MODEL_TYPE = "unet_fixed"
@@ -79,8 +83,8 @@ RESIDUALS = False
 
 LOSS_TYPE = "comb_ssp"
 # LOSS_TYPE = "mse"
-SCHEDULER = True
-MIN_LR = 1e-5
+SCHEDULER = False
+MIN_LR = 5e-4
 
 INIT = "xavier"
 DATA_SCALING = "minmax"

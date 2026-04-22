@@ -55,7 +55,7 @@ class LitAutoencoder(pl.LightningModule):
     def combined_ssp_loss(self, pred, target):
         ssp_loss = self.ssp(pred, target)
         mse_loss = torch.nn.functional.mse_loss(pred, target)
-        return ssp_loss + mse_loss
+        return (1 - ALPHA) * ssp_loss + ALPHA *  mse_loss
 
     def forward(self, x):
         return self.model(x)
