@@ -6,7 +6,17 @@ import pytorch_lightning as pl
 import torch
 import torch.optim as optim
 
-from config import ALPHA, MIN_LR, MODEL_TYPE, NUM_EPOCHS, RESIDUALS, SCHEDULER
+from config import (
+    ALPHA,
+    LOW_NOISE_IDENTITY_WEIGHT,
+    LOW_NOISE_QUANTILE,
+    MIN_LR,
+    MODEL_TYPE,
+    NOISE_NORM_GAMMA,
+    NUM_EPOCHS,
+    RESIDUALS,
+    SCHEDULER,
+)
 from losses import CombinedCorrelationLoss, CorrelationLoss, SSPLoss, fft_loss_per_bpm
 from ml_models.conv_2d import (
     Conv2DAutoencoder,
@@ -34,6 +44,7 @@ class LitAutoencoder(pl.LightningModule):
         self.corr_loss = None
         self.combined_corr_loss = None
         self.ssp = None
+        self._current_noisy_reference = None
         self.loss_fn: Callable[
             [torch.Tensor, torch.Tensor, torch.Tensor | None], torch.Tensor
         ]
@@ -93,12 +104,36 @@ class LitAutoencoder(pl.LightningModule):
         assert self.ssp is not None
         assert noise_var is not None
         ssp_loss = self.ssp(pred, target)
-        norm_mse_loss = self.noise_normalized_mse_loss(pred, target, noise_var)
-        return (1 - ALPHA) * ssp_loss + ALPHA * norm_mse_loss
+        norm_mse_loss = self.noise_normalized_mse_loss(
+            pred,
+            target,
+            noise_var,
+            gamma=NOISE_NORM_GAMMA,
+        )
 
-    def noise_normalized_mse_loss(self, pred, target, noise_var):
+        # Encourage identity behavior on low-noise samples so the model learns
+        # to leave already-clean signals unchanged.
+        assert self._current_noisy_reference is not None
+        sample_sigma = torch.sqrt(torch.mean(noise_var, dim=(1, 2, 3)))
+        sigma_cutoff = torch.quantile(sample_sigma.detach(), LOW_NOISE_QUANTILE)
+        low_noise_mask = sample_sigma <= sigma_cutoff
+        if torch.any(low_noise_mask):
+            identity_loss = torch.nn.functional.mse_loss(
+                pred[low_noise_mask],
+                self._current_noisy_reference[low_noise_mask],
+            )
+        else:
+            identity_loss = torch.zeros((), device=pred.device, dtype=pred.dtype)
+
+        return (
+            (1 - ALPHA) * ssp_loss
+            + ALPHA * norm_mse_loss
+            + LOW_NOISE_IDENTITY_WEIGHT * identity_loss
+        )
+
+    def noise_normalized_mse_loss(self, pred, target, noise_var, gamma=1.0):
         squared_error = (pred - target) ** 2
-        return torch.mean(squared_error / noise_var)
+        return torch.mean(squared_error / torch.pow(noise_var, gamma))
 
     def forward(self, x):
         return self.model(x)
@@ -125,8 +160,9 @@ class LitAutoencoder(pl.LightningModule):
         combined_recon = self(combined_noisy)
 
         pred_for_loss = combined_noisy - combined_recon if RESIDUALS else combined_recon
-
+        self._current_noisy_reference = combined_noisy
         loss = self.loss_fn(pred_for_loss, combined_clean, combined_noise_var)
+        self._current_noisy_reference = None
 
         return loss, combined_batch_size
 

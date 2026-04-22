@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import datetime
+
 from generic_parser.tools import DotDict
 
 from project_paths import get_model_dir
@@ -9,7 +10,7 @@ from project_paths import get_model_dir
 BEAM = 1
 NUM_FILES = 500
 LOAD_MODEL = False
-RESUME_FROM_CKPT = True
+RESUME_FROM_CKPT = False
 if RESUME_FROM_CKPT:
     # CONFIG_NAME = "2025-03-12_10-35-48" # First Long training with ideal
     # CONFIG_NAME = "2025-03-13_09-39-18" # Added mse to the loss (comb_ssp instead of ssp)
@@ -57,7 +58,8 @@ NLOGSTEPS = 16
 
 # NUM_PLANES = 2
 NUM_CHANNELS = 1
-PRECISION = "32"
+# Use mixed precision for Tensor Core throughput on modern NVIDIA GPUs.
+PRECISION = "bf16-mixed"
 
 NUM_EPOCHS = 10_000
 BOTTLENECK_SIZE = 4
@@ -67,6 +69,15 @@ LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-5
 
 ALPHA = 0.01
+
+# Improved comb_ssp_norm controls:
+# - NOISE_NORM_GAMMA < 1 softens inverse-variance weighting to reduce
+#   over-dominance from the lowest-noise samples.
+# - LOW_NOISE_IDENTITY_WEIGHT enforces near-identity behavior for low-noise inputs.
+# - LOW_NOISE_QUANTILE selects which samples in a batch are considered low-noise.
+NOISE_NORM_GAMMA = 0.75
+LOW_NOISE_IDENTITY_WEIGHT = 0.1
+LOW_NOISE_QUANTILE = 0.3
 
 DENOISED_INDEX = "denoised"
 SAMPLE_INDEX = "noisy"
@@ -124,6 +135,11 @@ if MODEL_TYPE == "unet" or MODEL_TYPE == "fno":
 
 if LOSS_TYPE == "fft" or LOSS_TYPE == "combined":
     experiment_config["alpha"] = ALPHA
+if LOSS_TYPE == "comb_ssp_norm":
+    experiment_config["alpha"] = ALPHA
+    experiment_config["noise_norm_gamma"] = NOISE_NORM_GAMMA
+    experiment_config["low_noise_identity_weight"] = LOW_NOISE_IDENTITY_WEIGHT
+    experiment_config["low_noise_quantile"] = LOW_NOISE_QUANTILE
 if SCHEDULER:
     experiment_config["min_lr"] = MIN_LR
 

@@ -4,19 +4,21 @@ import torch.nn.functional as F
 
 from config import ALPHA
 
+
 class CorrelationLoss(nn.Module):
     """
     Computes 1 - Pearson correlation between prediction and target.
-    
+
     For each sample in the batch, we:
       1. Flatten its data
       2. Remove mean
       3. Compute correlation = dot(pred, target)/[||pred||*||target||]
     Then average 1 - correlation across the batch.
-    
+
     This loss encourages signals to match in shape (phase, relative amplitude)
     but doesn't penalize absolute scale as strongly as MSE.
     """
+
     def __init__(self, eps=1e-8):
         super().__init__()
         self.eps = eps
@@ -38,7 +40,12 @@ class CorrelationLoss(nn.Module):
         t_centered = t - t.mean(dim=1, keepdim=True)
         # Compute components.
         numerator = torch.sum(p_centered * t_centered, dim=1)
-        denom = torch.sqrt(torch.sum(p_centered**2, dim=1) * torch.sum(t_centered**2, dim=1)) + self.eps
+        denom = (
+            torch.sqrt(
+                torch.sum(p_centered**2, dim=1) * torch.sum(t_centered**2, dim=1)
+            )
+            + self.eps
+        )
         # 1 - Pearson correlation per sample.
         corr = numerator / denom
         return torch.mean(1 - corr)
@@ -48,14 +55,14 @@ class CombinedCorrelationLoss(nn.Module):
     def __init__(self):
         """
         Correlation loss that gradually transitions to MSE loss
-        
+
         Args:
             epochs: Total training epochs
             fade_start: Fraction of training when correlation weight starts decreasing
             fade_end: Fraction of training when correlation weight reaches minimum
         """
         super().__init__()
-        
+
     def correlation_coefficient(self, x, y):
         """Calculate batch-wise Pearson correlation coefficient"""
         # x, y shape: (B, 1, ...)
@@ -71,54 +78,55 @@ class CombinedCorrelationLoss(nn.Module):
         epsilon = 1e-8
         corr = numerator / (x_norm * y_norm + epsilon)
         return corr.mean()
+
     def forward(self, pred, target):
         """Calculate the weighted loss"""
         # MSE component
-        mse_loss = torch.mean((pred - target)**2)
-        
+        mse_loss = torch.mean((pred - target) ** 2)
+
         # Correlation component (1-corr so 0 is perfect correlation)
         corr = self.correlation_coefficient(pred, target)
         corr_loss = 1.0 - corr
 
         if corr_loss < 1e-8:
             corr_loss = 0
-        
+
         # Apply weighting
-        total_loss = ALPHA * 10 * corr_loss + (1-ALPHA) * mse_loss
-        
+        total_loss = ALPHA * 10 * corr_loss + (1 - ALPHA) * mse_loss
+
         return total_loss
 
 
 def fft_loss_per_bpm(pred, target, n_fft=1024, eps=1e-8):
     """
     Computes an FFT loss for each BPM over the turns dimension.
-    
+
     Args:
         pred: Tensor of shape (B, 2, NBPMS, NTURNS)
         target: Tensor of shape (B, 2, NBPMS, NTURNS)
         n_fft: Number of FFT points.
         eps: Small constant to avoid log(0).
-        
+
     Returns:
         Scalar loss computed as the mean squared error of the log magnitude spectra.
     """
     B, C, NBPMS, NTURNS = pred.shape
     # Reshape to combine batch, channel, and BPM dimensions.
-    pred_flat = pred.view(B * C * NBPMS, NTURNS)
-    target_flat = target.view(B * C * NBPMS, NTURNS)
-    
+    pred_flat = pred.view(B * C * NBPMS, NTURNS).float()
+    target_flat = target.view(B * C * NBPMS, NTURNS).float()
+
     # Compute FFT along the time dimension.
     pred_fft = torch.fft.rfft(pred_flat, n=n_fft, dim=-1)
     target_fft = torch.fft.rfft(target_flat, n=n_fft, dim=-1)
-    
+
     # Compute magnitude spectra.
     pred_mag = torch.abs(pred_fft)
     target_mag = torch.abs(target_fft)
-    
+
     # Optionally, compute the log magnitude to emphasize relative differences.
     pred_log = torch.log10(torch.clamp(pred_mag, min=eps))
     target_log = torch.log10(torch.clamp(target_mag, min=eps))
-    
+
     # Compute mean squared error between the log spectra.
     loss = F.mse_loss(pred_log, target_log)
     return loss
@@ -171,14 +179,16 @@ class SSPLoss(nn.Module):
         new_H = next_power_of_two(p.size(1))
         new_W = next_power_of_two(p.size(2))
 
-        # Compute 2D FFTs with automatic zero-padding to power-of-two dimensions.
-        p_fft = torch.fft.rfft2(p, s=(new_H, new_W), norm="ortho")
-        t_fft = torch.fft.rfft2(t, s=(new_H, new_W), norm="ortho")
+        # Keep FFT math in fp32 to avoid ComplexHalf limitations while allowing
+        # the rest of the model/loss to run in mixed precision.
+        with torch.autocast(device_type=pred.device.type, enabled=False):
+            p_fft = torch.fft.rfft2(p.float(), s=(new_H, new_W), norm="ortho")
+            t_fft = torch.fft.rfft2(t.float(), s=(new_H, new_W), norm="ortho")
 
-        # Compute L2 norm differences per sample.
-        diff = p_fft - t_fft
-        diff_l2 = torch.sqrt(torch.sum(torch.abs(diff) ** 2, dim=(1, 2)))
-        p_l2 = torch.sqrt(torch.sum(torch.abs(p_fft) ** 2, dim=(1, 2)))
-        t_l2 = torch.sqrt(torch.sum(torch.abs(t_fft) ** 2, dim=(1, 2)))
-        ssp = diff_l2 / (p_l2 + t_l2 + self.eps)
+            # Compute L2 norm differences per sample.
+            diff = p_fft - t_fft
+            diff_l2 = torch.sqrt(torch.sum(torch.abs(diff) ** 2, dim=(1, 2)))
+            p_l2 = torch.sqrt(torch.sum(torch.abs(p_fft) ** 2, dim=(1, 2)))
+            t_l2 = torch.sqrt(torch.sum(torch.abs(t_fft) ** 2, dim=(1, 2)))
+            ssp = diff_l2 / (p_l2 + t_l2 + self.eps)
         return ssp.mean()

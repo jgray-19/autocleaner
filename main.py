@@ -18,11 +18,11 @@ from config import (
     MODEL_SAVE_PATH,
     NLOGSTEPS,
     NUM_EPOCHS,
+    PRECISION,
     RESIDUALS,
     RESUME_FROM_CKPT,
     WEIGHT_DECAY,
     print_config,
-    PRECISION,
     save_experiment_config,
 )
 from dataloader import build_sample_dict, load_data
@@ -36,6 +36,9 @@ def main() -> None:
         free, available = torch.cuda.mem_get_info()
         print("Current GPU use:", (available - free) / 1e9, "GB")
         torch.set_float32_matmul_precision("medium")
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        torch.backends.cudnn.benchmark = True
     else:
         print("CUDA not available. Running on CPU.")
 
