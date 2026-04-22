@@ -270,6 +270,11 @@ class BPMSDataset(Dataset):
         factor_idx = spec["noise_factor_idx"]
         noise_factor = self.noise_factors[factor_idx]
 
+        # Per-element variance in normalized space: (noise_factor * noise_scale)^2.
+        # Shapes are broadcastable to (1, NBPMS, NTURNS).
+        noise_var_x = (noise_factor * source["noise_scale_x"]) ** 2
+        noise_var_y = (noise_factor * source["noise_scale_y"]) ** 2
+
         rng = np.random.default_rng(spec["rng_seed"])
 
         # Generate raw noise (vectorized) and then scale it:
@@ -290,6 +295,8 @@ class BPMSDataset(Dataset):
             "noisy_y": noisy_norm_y,
             "clean_x": clean_slice_norm_x,
             "clean_y": clean_slice_norm_y,
+            "noise_var_x": noise_var_x.unsqueeze(0).unsqueeze(-1),
+            "noise_var_y": noise_var_y.unsqueeze(0).unsqueeze(-1),
             "source_idx": torch.tensor(source_idx, dtype=torch.long),
         }
 
