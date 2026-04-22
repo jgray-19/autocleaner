@@ -97,7 +97,7 @@ LOSS_TYPE = "comb_ssp_norm"
 SCHEDULER = False
 MIN_LR = 5e-4
 
-INIT = "xavier"
+INIT = "identity"
 DATA_SCALING = "minmax"
 USE_OFFSETS = True
 

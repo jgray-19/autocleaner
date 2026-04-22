@@ -201,24 +201,25 @@ def find_newest_file(directory_path):
 def get_model():
     # Initialize or Load Model
     if MODEL_TYPE == "sine":
-        return SineConv2DAutoencoder()
+        model = SineConv2DAutoencoder()
     elif MODEL_TYPE == "conv":
-        return Conv2DAutoencoder()
+        model = Conv2DAutoencoder()
     elif MODEL_TYPE == "leaky":
-        return Conv2DAutoencoderLeaky()
+        model = Conv2DAutoencoderLeaky()
     elif MODEL_TYPE == "nofc":
-        return Conv2DAutoencoderLeakyNoFC()
+        model = Conv2DAutoencoderLeakyNoFC()
     elif MODEL_TYPE == "fourier":
-        return Conv2DAutoencoderLeakyFourier()
+        model = Conv2DAutoencoderLeakyFourier()
     elif MODEL_TYPE == "deep":
-        return DeepConvAutoencoder()
+        model = DeepConvAutoencoder()
     elif MODEL_TYPE == "unet":
-        return UNetAutoencoder()
+        model = UNetAutoencoder()
     elif MODEL_TYPE == "unet_fixed":
-        return UNetAutoencoderFixedDepth()
+        model = UNetAutoencoderFixedDepth()
     elif MODEL_TYPE == "unet_fixed_checkpoint":
-        return UNetAutoencoderFixedDepthCheckpoint()
+        model = UNetAutoencoderFixedDepthCheckpoint()
     elif MODEL_TYPE == "fno":
-        return FNO2d()
+        model = FNO2d()
     else:
         raise ValueError(f"Unknown model type: {MODEL_TYPE}")
+    return model

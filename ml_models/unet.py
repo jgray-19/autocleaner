@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from config import BASE_CHANNELS, NUM_CHANNELS, MODEL_DEPTH
+from config import BASE_CHANNELS, INIT, MODEL_DEPTH, NUM_CHANNELS
 from torch.utils.checkpoint import checkpoint
 
 class UNetAutoencoder(nn.Module):
@@ -49,6 +49,23 @@ class UNetAutoencoder(nn.Module):
 
         # Final layer to bring the number of channels back to in_channels.
         self.final_conv = nn.Conv2d(base_channels, in_channels, kernel_size=1)
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+            if INIT == "identity":
+                nn.init.dirac_(m.weight)
+            elif INIT == "xavier":
+                nn.init.xavier_uniform_(m.weight)
+            elif INIT == "kaiming":
+                nn.init.kaiming_normal_(m.weight, nonlinearity="leaky_relu")
+            else:
+                raise ValueError(f"Unknown init type: {INIT}")
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.BatchNorm2d):
+            nn.init.ones_(m.weight)
+            nn.init.zeros_(m.bias)
 
     def conv_block(self, in_ch, out_ch):
         """A double convolution block with BatchNorm and LeakyReLU activations."""
@@ -144,6 +161,23 @@ class UNetAutoencoderFixedDepth(nn.Module):
         
         # Final output convolution to get back to in_channels
         self.final_conv = nn.Conv2d(base_channels, in_channels, kernel_size=1)
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+            if INIT == "identity":
+                nn.init.dirac_(m.weight)
+            elif INIT == "xavier":
+                nn.init.xavier_uniform_(m.weight)
+            elif INIT == "kaiming":
+                nn.init.kaiming_normal_(m.weight, nonlinearity="leaky_relu")
+            else:
+                raise ValueError(f"Unknown init type: {INIT}")
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.BatchNorm2d):
+            nn.init.ones_(m.weight)
+            nn.init.zeros_(m.bias)
     
     def conv_block(self, in_ch, out_ch):
         """A double convolution block with BatchNorm and LeakyReLU activations."""
@@ -245,6 +279,23 @@ class UNetAutoencoderFixedDepthCheckpoint(nn.Module):
         self.dec1 = self.conv_block(base_channels * 2, base_channels)
         
         self.final_conv = nn.Conv2d(base_channels, in_channels, kernel_size=1)
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+            if INIT == "identity":
+                nn.init.dirac_(m.weight)
+            elif INIT == "xavier":
+                nn.init.xavier_uniform_(m.weight)
+            elif INIT == "kaiming":
+                nn.init.kaiming_normal_(m.weight, nonlinearity="leaky_relu")
+            else:
+                raise ValueError(f"Unknown init type: {INIT}")
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.BatchNorm2d):
+            nn.init.ones_(m.weight)
+            nn.init.zeros_(m.bias)
     
     def conv_block(self, in_ch, out_ch):
         """A double convolution block with BatchNorm and LeakyReLU activations."""

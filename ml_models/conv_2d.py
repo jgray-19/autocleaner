@@ -63,6 +63,23 @@ class Conv2DAutoencoder(nn.Module):
             ),
             # Note: No final activation; we want a linear output to cover the full range.
         )
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.Linear)):
+            if INIT == "identity":
+                if isinstance(m, nn.Linear):
+                    nn.init.eye_(m.weight)
+                else:
+                    nn.init.dirac_(m.weight)
+            elif INIT == "xavier":
+                nn.init.xavier_uniform_(m.weight)
+            elif INIT == "kaiming":
+                nn.init.kaiming_normal_(m.weight, nonlinearity="relu")
+            else:
+                raise ValueError(f"Unknown init type: {INIT}")
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
 
     def forward(self, x):
         """
@@ -135,6 +152,23 @@ class SineConv2DAutoencoder(nn.Module):
             )
             # Note: No final activation; we want a linear output to cover the full range.
         )
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.Linear)):
+            if INIT == "identity":
+                if isinstance(m, nn.Linear):
+                    nn.init.eye_(m.weight)
+                else:
+                    nn.init.dirac_(m.weight)
+            elif INIT == "xavier":
+                nn.init.xavier_uniform_(m.weight)
+            elif INIT == "kaiming":
+                nn.init.kaiming_normal_(m.weight, nonlinearity="linear")
+            else:
+                raise ValueError(f"Unknown init type: {INIT}")
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
 
     def forward(self, x):
         """
@@ -219,7 +253,12 @@ class Conv2DAutoencoderLeaky(nn.Module):
     
     def _init_weights(self, m):
         if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.Linear)):
-            if INIT == "xavier":
+            if INIT == "identity":
+                if isinstance(m, nn.Linear):
+                    nn.init.eye_(m.weight)
+                else:
+                    nn.init.dirac_(m.weight)
+            elif INIT == "xavier":
                 nn.init.xavier_uniform_(m.weight)
             elif INIT == "kaiming":
                 nn.init.kaiming_normal_(m.weight, nonlinearity='leaky_relu')
@@ -306,7 +345,9 @@ class Conv2DAutoencoderLeakyNoFC(nn.Module):
         
     def _init_weights(self, m):
         if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-            if INIT == "xavier":
+            if INIT == "identity":
+                nn.init.dirac_(m.weight)
+            elif INIT == "xavier":
                 nn.init.xavier_uniform_(m.weight)
             elif INIT == "kaiming":
                 nn.init.kaiming_normal_(m.weight, nonlinearity='leaky_relu')
@@ -431,7 +472,9 @@ class Conv2DAutoencoderLeakyFourier(nn.Module):
     
     def _init_weights(self, m):
         if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-            if INIT == "xavier":
+            if INIT == "identity":
+                nn.init.dirac_(m.weight)
+            elif INIT == "xavier":
                 nn.init.xavier_uniform_(m.weight)
             elif INIT == "kaiming":
                 nn.init.kaiming_normal_(m.weight, nonlinearity="leaky_relu")
@@ -517,7 +560,9 @@ class DeepConvAutoencoder(nn.Module):
 
     def _init_weights(self, m):
         if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-            if INIT == "xavier":
+            if INIT == "identity":
+                nn.init.dirac_(m.weight)
+            elif INIT == "xavier":
                 nn.init.xavier_uniform_(m.weight)
             elif INIT == "kaiming":
                 nn.init.kaiming_normal_(m.weight, nonlinearity="leaky_relu")
