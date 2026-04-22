@@ -407,15 +407,17 @@ def load_data() -> tuple[DataLoader, DataLoader, BPMSDataset]:
         train_dataset,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=4,
-        pin_memory=False,
+        num_workers=12,
+        pin_memory=True,
+        persistent_workers=True,
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=BATCH_SIZE,
         shuffle=False,
         num_workers=4,
-        pin_memory=False,
+        pin_memory=True,
+        persistent_workers=True,
     )
     return train_loader, val_loader, val_dataset
 

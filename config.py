@@ -53,11 +53,11 @@ NUM_SAME_OFFSET = 1
 MODEL_SAVE_PATH = "conv_autoencoder.pth"
 MODEL_DIR = get_model_dir(beam=BEAM)
 
-NLOGSTEPS = 2
+NLOGSTEPS = 16
 
 # NUM_PLANES = 2
 NUM_CHANNELS = 1
-PRECISION = "16-mixed"
+PRECISION = "32"
 
 NUM_EPOCHS = 10_000
 BOTTLENECK_SIZE = 4
@@ -81,7 +81,7 @@ MODEL_TYPE = "unet_fixed"
 MODEL_DEPTH = 4
 RESIDUALS = False
 
-LOSS_TYPE = "comb_ssp"
+LOSS_TYPE = "comb_ssp_norm"
 # LOSS_TYPE = "mse"
 SCHEDULER = False
 MIN_LR = 5e-4

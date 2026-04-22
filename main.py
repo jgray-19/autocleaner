@@ -22,6 +22,7 @@ from config import (
     RESUME_FROM_CKPT,
     WEIGHT_DECAY,
     print_config,
+    PRECISION,
     save_experiment_config,
 )
 from dataloader import build_sample_dict, load_data
@@ -34,6 +35,7 @@ def main() -> None:
     if torch.cuda.is_available():
         free, available = torch.cuda.mem_get_info()
         print("Current GPU use:", (available - free) / 1e9, "GB")
+        torch.set_float32_matmul_precision("medium")
     else:
         print("CUDA not available. Running on CPU.")
 
@@ -73,6 +75,7 @@ def main() -> None:
         trainer = pl.Trainer(
             accumulate_grad_batches=ACCUMULATE_BATCHES,
             max_epochs=NUM_EPOCHS,
+            precision=PRECISION,
             log_every_n_steps=NLOGSTEPS,
             default_root_dir=root_dir,
             logger=logger,
